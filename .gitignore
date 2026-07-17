@@ -1,0 +1,47 @@
+# Node modules
+node_modules/
+
+# Expo
+.expo/
+.expo-shared/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# iOS
+ios/Pods/
+ios/Podfile.lock
+ios/build/
+*.xcworkspace
+*.xcuserstate
+*.xcuserdata
+DerivedData/
+
+# Android
+android/.gradle/
+android/app/build/
+
+# Lock files
+package-lock.json
+yarn.lock
+
+# Build artifacts
+*.log
+*.tmp
+*.temp
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.backup
+*.bak
