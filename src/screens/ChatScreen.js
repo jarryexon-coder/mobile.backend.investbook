@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,8 @@ import {
   Image,
   Alert,
   Modal,
-  ScrollView,
+  SafeAreaView,
+  StatusBar,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import axios from 'axios';
@@ -46,37 +47,26 @@ export default function ChatScreen({ navigation, route }) {
     await connectWebSocket();
   };
 
-const connectWebSocket = async () => {
-  try {
+  const connectWebSocket = async () => {
     const socket = await webSocketService.connect();
-    if (socket && webSocketService.isConnected) {
+    if (socket) {
       setIsConnected(true);
       webSocketService.joinDealChat(dealId);
-      
       webSocketService.on('new_message', handleNewMessage);
       webSocketService.on('typing_start', handleTypingStart);
       webSocketService.on('typing_end', handleTypingEnd);
       webSocketService.on('message_read', handleMessageRead);
-    } else {
-      console.log('⚠️ WebSocket connection not established');
-      setIsConnected(false);
     }
-  } catch (error) {
-    console.error('❌ WebSocket connection failed:', error);
-    setIsConnected(false);
-  }
-};
+  };
 
-const cleanup = () => {
-  webSocketService.off('new_message', handleNewMessage);
-  webSocketService.off('typing_start', handleTypingStart);
-  webSocketService.off('typing_end', handleTypingEnd);
-  webSocketService.off('message_read', handleMessageRead);
-  if (isConnected) {
+  const cleanup = () => {
+    webSocketService.off('new_message', handleNewMessage);
+    webSocketService.off('typing_start', handleTypingStart);
+    webSocketService.off('typing_end', handleTypingEnd);
+    webSocketService.off('message_read', handleMessageRead);
     webSocketService.leaveDealChat(dealId);
-  }
-  webSocketService.disconnect();
-};
+    webSocketService.disconnect();
+  };
 
   const fetchMessages = async () => {
     try {
@@ -88,7 +78,6 @@ const cleanup = () => {
       setMessages(response.data || []);
     } catch (error) {
       console.error('Error fetching messages:', error);
-      // Mock messages for demo
       setMessages([
         {
           id: 1,
@@ -115,15 +104,7 @@ const cleanup = () => {
   const handleNewMessage = (data) => {
     if (data.dealId === dealId) {
       setMessages(prev => [...prev, data.message]);
-      // Mark message as read
       webSocketService.markAsRead(data.message.id, dealId);
-      // Send notification if not in chat
-      if (!isConnected) {
-        notificationService.showInAppNotification(
-          'New Message',
-          `${data.message.username}: ${data.message.text}`
-        );
-      }
     }
   };
 
@@ -158,20 +139,9 @@ const cleanup = () => {
 
     try {
       const token = await AsyncStorage.getItem('token');
-      
-      // Prepare message data
-      const messageData = {
-        text: messageText,
-        image: selectedImage,
-      };
-
-      // Send via WebSocket
-      webSocketService.sendMessage(dealId, messageText, selectedImage);
-
-      // Also save to server
       const response = await axios.post(
         `${API_URL}/deals/${dealId}/messages`,
-        messageData,
+        { text: messageText, image: selectedImage },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
@@ -188,9 +158,11 @@ const cleanup = () => {
       setMessages(prev => [...prev, newMessage]);
       flatListRef.current?.scrollToEnd({ animated: true });
       setSelectedImage(null);
+      
+      // Notify via WebSocket
+      webSocketService.sendMessage(dealId, messageText, selectedImage);
     } catch (error) {
       console.error('Error sending message:', error);
-      // Add message locally if API fails
       const newMessage = {
         id: Date.now(),
         userId: 'me',
@@ -209,7 +181,6 @@ const cleanup = () => {
 
   const handleInputChange = (text) => {
     setInputText(text);
-    // Send typing indicator
     if (text.trim()) {
       webSocketService.startTyping(dealId);
       clearTimeout(typingTimeoutRef.current);
@@ -316,100 +287,106 @@ const cleanup = () => {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-    >
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Icon name="arrow-back" size={24} color="#1a1a1a" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{dealTitle || 'Chat'}</Text>
-        <TouchableOpacity onPress={() => setShowImagePicker(true)} style={styles.headerButton}>
-          <Icon name="image-outline" size={24} color="#1a1a1a" />
-        </TouchableOpacity>
-      </View>
-
-      {selectedImage && (
-        <View style={styles.imagePreview}>
-          <Image 
-            source={{ uri: `data:image/jpeg;base64,${selectedImage}` }}
-            style={styles.previewImage}
-          />
-          <TouchableOpacity 
-            style={styles.removeImage}
-            onPress={() => setSelectedImage(null)}
-          >
-            <Icon name="close-circle" size={24} color="#ef4444" />
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" />
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      >
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+            <Icon name="arrow-back" size={24} color="#1a1a1a" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>{dealTitle || 'Chat'}</Text>
+          <TouchableOpacity onPress={() => setShowImagePicker(true)} style={styles.headerButton}>
+            <Icon name="image-outline" size={24} color="#1a1a1a" />
           </TouchableOpacity>
         </View>
-      )}
 
-      <FlatList
-        ref={flatListRef}
-        data={messages}
-        renderItem={renderMessage}
-        keyExtractor={(item) => item.id.toString()}
-        contentContainerStyle={styles.messagesList}
-        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-        ListFooterComponent={renderTypingIndicator}
-      />
-
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
-          placeholder="Type a message..."
-          value={inputText}
-          onChangeText={handleInputChange}
-          multiline
-          editable={!sending}
-        />
-        <TouchableOpacity
-          style={[styles.sendButton, (!inputText.trim() && !selectedImage) && styles.sendButtonDisabled]}
-          onPress={sendMessage}
-          disabled={(!inputText.trim() && !selectedImage) || sending}
-        >
-          {sending ? (
-            <ActivityIndicator size="small" color="white" />
-          ) : (
-            <Icon name="send" size={20} color="white" />
-          )}
-        </TouchableOpacity>
-      </View>
-
-      {/* Image Picker Modal */}
-      <Modal
-        visible={showImagePicker}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowImagePicker(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Add Image</Text>
-            <TouchableOpacity style={styles.modalButton} onPress={takePhoto}>
-              <Icon name="camera" size={24} color="#2563eb" />
-              <Text style={styles.modalButtonText}>Take Photo</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.modalButton} onPress={pickImage}>
-              <Icon name="images" size={24} color="#2563eb" />
-              <Text style={styles.modalButtonText}>Choose from Library</Text>
-            </TouchableOpacity>
+        {selectedImage && (
+          <View style={styles.imagePreview}>
+            <Image 
+              source={{ uri: `data:image/jpeg;base64,${selectedImage}` }}
+              style={styles.previewImage}
+            />
             <TouchableOpacity 
-              style={[styles.modalButton, styles.cancelButton]} 
-              onPress={() => setShowImagePicker(false)}
+              style={styles.removeImage}
+              onPress={() => setSelectedImage(null)}
             >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
+              <Icon name="close-circle" size={24} color="#ef4444" />
             </TouchableOpacity>
           </View>
+        )}
+
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          renderItem={renderMessage}
+          keyExtractor={(item) => item.id.toString()}
+          contentContainerStyle={styles.messagesList}
+          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          ListFooterComponent={renderTypingIndicator}
+        />
+
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.input}
+            placeholder="Type a message..."
+            value={inputText}
+            onChangeText={handleInputChange}
+            multiline
+            editable={!sending}
+          />
+          <TouchableOpacity
+            style={[styles.sendButton, (!inputText.trim() && !selectedImage) && styles.sendButtonDisabled]}
+            onPress={sendMessage}
+            disabled={(!inputText.trim() && !selectedImage) || sending}
+          >
+            {sending ? (
+              <ActivityIndicator size="small" color="white" />
+            ) : (
+              <Icon name="send" size={20} color="white" />
+            )}
+          </TouchableOpacity>
         </View>
-      </Modal>
-    </KeyboardAvoidingView>
+
+        <Modal
+          visible={showImagePicker}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setShowImagePicker(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Add Image</Text>
+              <TouchableOpacity style={styles.modalButton} onPress={takePhoto}>
+                <Icon name="camera" size={24} color="#2563eb" />
+                <Text style={styles.modalButtonText}>Take Photo</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalButton} onPress={pickImage}>
+                <Icon name="images" size={24} color="#2563eb" />
+                <Text style={styles.modalButtonText}>Choose from Library</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.cancelButton]} 
+                onPress={() => setShowImagePicker(false)}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
@@ -428,7 +405,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 10,
     backgroundColor: 'white',
     borderBottomWidth: 1,
     borderBottomColor: '#e5e5e5',

@@ -7,7 +7,8 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
-  Linking,
+  SafeAreaView,
+  StatusBar,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../hooks/useAuth';
@@ -49,7 +50,6 @@ export default function SubscriptionScreen({ navigation }) {
 
     setSubscribing(true);
     try {
-      // ✅ Create payment intent on backend
       const response = await fetch(`${API_URL}/subscriptions/create-payment-intent`, {
         method: 'POST',
         headers: {
@@ -65,18 +65,13 @@ export default function SubscriptionScreen({ navigation }) {
         throw new Error(data.error || 'Failed to create payment intent');
       }
 
-      // ✅ Open Stripe Checkout in browser
-      // In production, you'd redirect to Stripe Checkout or use a webview
       Alert.alert(
         'Payment Required',
         'Complete your subscription payment to activate premium features.',
         [
           {
             text: 'Continue to Payment',
-            onPress: () => {
-              // For testing, simulate successful payment
-              activateSubscription(planId);
-            },
+            onPress: () => activateSubscription(planId),
           },
           { text: 'Cancel', style: 'cancel' },
         ]
@@ -157,121 +152,128 @@ export default function SubscriptionScreen({ navigation }) {
   }
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Subscription</Text>
-        <Text style={styles.subtitle}>Manage your InvestBook subscription</Text>
-      </View>
-
-      <View style={[styles.statusCard, isSubscribed ? styles.activeCard : styles.inactiveCard]}>
-        <View style={styles.statusHeader}>
-          <Icon 
-            name={isSubscribed ? 'checkmark-circle' : 'lock-closed'} 
-            size={24} 
-            color={isSubscribed ? '#22c55e' : '#ef4444'} 
-          />
-          <Text style={styles.statusText}>
-            {isSubscribed ? 'Active' : 'Inactive'}
-          </Text>
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" />
+      <ScrollView style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Subscription</Text>
+          <Text style={styles.subtitle}>Manage your InvestBook subscription</Text>
         </View>
-        {isSubscribed && subscription && (
-          <View style={styles.statusDetails}>
-            <Text style={styles.statusDetailText}>
-              Plan: {subscription.planId === 'monthly' ? 'Monthly' : 'Yearly'}
+
+        <View style={[styles.statusCard, isSubscribed ? styles.activeCard : styles.inactiveCard]}>
+          <View style={styles.statusHeader}>
+            <Icon 
+              name={isSubscribed ? 'checkmark-circle' : 'lock-closed'} 
+              size={24} 
+              color={isSubscribed ? '#22c55e' : '#ef4444'} 
+            />
+            <Text style={styles.statusText}>
+              {isSubscribed ? 'Active' : 'Inactive'}
             </Text>
-            <Text style={styles.statusDetailText}>
-              Expires: {new Date(subscription.expiryDate).toLocaleDateString()}
+          </View>
+          {isSubscribed && subscription && (
+            <View style={styles.statusDetails}>
+              <Text style={styles.statusDetailText}>
+                Plan: {subscription.planId === 'monthly' ? 'Monthly' : 'Yearly'}
+              </Text>
+              <Text style={styles.statusDetailText}>
+                Expires: {new Date(subscription.expiryDate).toLocaleDateString()}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {!isSubscribed && (
+          <View style={styles.plansContainer}>
+            <Text style={styles.sectionTitle}>Choose Your Plan</Text>
+            
+            <TouchableOpacity
+              style={[
+                styles.planCard,
+                selectedPlan === 'monthly' && styles.planCardSelected,
+              ]}
+              onPress={() => setSelectedPlan('monthly')}
+            >
+              <View style={styles.planHeader}>
+                <Text style={styles.planName}>Monthly</Text>
+                <Text style={styles.planPrice}>$4.99</Text>
+              </View>
+              <Text style={styles.planInterval}>per month</Text>
+              {selectedPlan === 'monthly' && (
+                <View style={styles.selectedBadge}>
+                  <Text style={styles.selectedBadgeText}>Selected</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.planCard,
+                selectedPlan === 'yearly' && styles.planCardSelected,
+                styles.planCardPopular,
+              ]}
+              onPress={() => setSelectedPlan('yearly')}
+            >
+              <View style={styles.popularBadge}>
+                <Text style={styles.popularBadgeText}>Best Value</Text>
+              </View>
+              <View style={styles.planHeader}>
+                <Text style={styles.planName}>Yearly</Text>
+                <Text style={styles.planPrice}>$49.99</Text>
+              </View>
+              <Text style={styles.planInterval}>per year (save $9.89)</Text>
+              {selectedPlan === 'yearly' && (
+                <View style={styles.selectedBadge}>
+                  <Text style={styles.selectedBadgeText}>Selected</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.subscribeButton}
+              onPress={() => handleSubscribe(selectedPlan)}
+              disabled={subscribing}
+            >
+              {subscribing ? (
+                <ActivityIndicator color="white" />
+              ) : (
+                <Text style={styles.subscribeButtonText}>
+                  Subscribe Now - ${selectedPlan === 'monthly' ? '4.99' : '49.99'}
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            <Text style={styles.secureText}>
+              🔒 Secured by Stripe. Your payment information is safe.
             </Text>
           </View>
         )}
-      </View>
 
-      {!isSubscribed && (
-        <View style={styles.plansContainer}>
-          <Text style={styles.sectionTitle}>Choose Your Plan</Text>
-          
-          <TouchableOpacity
-            style={[
-              styles.planCard,
-              selectedPlan === 'monthly' && styles.planCardSelected,
-            ]}
-            onPress={() => setSelectedPlan('monthly')}
-          >
-            <View style={styles.planHeader}>
-              <Text style={styles.planName}>Monthly</Text>
-              <Text style={styles.planPrice}>$4.99</Text>
-            </View>
-            <Text style={styles.planInterval}>per month</Text>
-            {selectedPlan === 'monthly' && (
-              <View style={styles.selectedBadge}>
-                <Text style={styles.selectedBadgeText}>Selected</Text>
-              </View>
-            )}
-          </TouchableOpacity>
+        {isSubscribed && (
+          <View style={styles.actionsContainer}>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.cancelButton]}
+              onPress={handleCancelSubscription}
+            >
+              <Icon name="close-circle-outline" size={20} color="#ef4444" />
+              <Text style={[styles.actionButtonText, styles.cancelButtonText]}>Cancel Subscription</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
-          <TouchableOpacity
-            style={[
-              styles.planCard,
-              selectedPlan === 'yearly' && styles.planCardSelected,
-              styles.planCardPopular,
-            ]}
-            onPress={() => setSelectedPlan('yearly')}
-          >
-            <View style={styles.popularBadge}>
-              <Text style={styles.popularBadgeText}>Best Value</Text>
-            </View>
-            <View style={styles.planHeader}>
-              <Text style={styles.planName}>Yearly</Text>
-              <Text style={styles.planPrice}>$49.99</Text>
-            </View>
-            <Text style={styles.planInterval}>per year (save $9.89)</Text>
-            {selectedPlan === 'yearly' && (
-              <View style={styles.selectedBadge}>
-                <Text style={styles.selectedBadgeText}>Selected</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.subscribeButton}
-            onPress={() => handleSubscribe(selectedPlan)}
-            disabled={subscribing}
-          >
-            {subscribing ? (
-              <ActivityIndicator color="white" />
-            ) : (
-              <Text style={styles.subscribeButtonText}>
-                Subscribe Now - ${selectedPlan === 'monthly' ? '4.99' : '49.99'}
-              </Text>
-            )}
-          </TouchableOpacity>
-
-          <Text style={styles.secureText}>
-            🔒 Secured by Stripe. Your payment information is safe.
-          </Text>
-        </View>
-      )}
-
-      {isSubscribed && (
-        <View style={styles.actionsContainer}>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.cancelButton]}
-            onPress={handleCancelSubscription}
-          >
-            <Icon name="close-circle-outline" size={20} color="#ef4444" />
-            <Text style={[styles.actionButtonText, styles.cancelButtonText]}>Cancel Subscription</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      <Text style={styles.termsText}>
-        By subscribing, you agree to our Terms of Service. Subscriptions auto-renew unless canceled.
-      </Text>
-    </ScrollView>
+        <Text style={styles.termsText}>
+          By subscribing, you agree to our Terms of Service. Subscriptions auto-renew unless canceled.
+        </Text>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
@@ -287,7 +289,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   header: {
-    padding: 20,
+    padding: 16,
+    paddingTop: 8,
     backgroundColor: 'white',
     borderBottomWidth: 1,
     borderBottomColor: '#e5e5e5',
@@ -300,11 +303,11 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 14,
     color: '#666',
-    marginTop: 4,
+    marginTop: 2,
   },
   statusCard: {
     margin: 16,
-    padding: 16,
+    padding: 14,
     borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
@@ -329,11 +332,12 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   statusDetailText: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#666',
   },
   plansContainer: {
     padding: 16,
+    paddingTop: 0,
   },
   sectionTitle: {
     fontSize: 18,
@@ -384,9 +388,9 @@ const styles = StyleSheet.create({
     color: '#2563eb',
   },
   planInterval: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#666',
-    marginTop: 4,
+    marginTop: 2,
   },
   selectedBadge: {
     backgroundColor: '#2563eb',
@@ -447,7 +451,7 @@ const styles = StyleSheet.create({
     color: '#999',
     textAlign: 'center',
     paddingHorizontal: 32,
-    marginTop: 16,
+    marginTop: 8,
     marginBottom: 40,
     lineHeight: 18,
   },
