@@ -18,7 +18,6 @@ target 'mobilefixed' do
     react_native_post_install(installer)
     
     # ✅ Fix for clockid_t redefinition on Xcode 26
-    # Patch the Folly Time.h file after installation
     system("find Pods -name 'Time.h' -path '*/folly/portability/*' -exec sed -i '' 's/typedef uint8_t clockid_t;/\\/\\/ typedef uint8_t clockid_t;/g' {} \\;")
     
     installer.pods_project.targets.each do |target|
@@ -30,6 +29,11 @@ target 'mobilefixed' do
         config.build_settings['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
         config.build_settings['SWIFT_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
         config.build_settings['GCC_WARN_INHIBIT_ALL_WARNINGS'] = 'YES'
+        
+        # ✅ Generate dSYM for Hermes
+        if target.name == 'hermes-engine'
+          config.build_settings['DEBUG_INFORMATION_FORMAT'] = 'dwarf-with-dsym'
+        end
         
         # ✅ For specific targets
         if target.name == 'RCT-Folly' || target.name == 'Yoga'

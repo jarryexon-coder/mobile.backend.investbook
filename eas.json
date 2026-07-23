@@ -7,19 +7,23 @@
       "developmentClient": true,
       "distribution": "internal",
       "ios": {
-        "image": "latest"
+        "image": "latest",
+        "resourceClass": "default"
       }
     },
     "preview": {
       "distribution": "internal",
       "ios": {
-        "image": "latest"
+        "image": "latest",
+        "resourceClass": "default"
       }
     },
     "production": {
       "autoIncrement": true,
       "ios": {
-        "image": "latest"
+        "image": "latest",
+        "resourceClass": "default",
+        "buildConfiguration": "Release"
       },
       "env": {
         "RCT_NO_LAUNCH_PACKAGER": "true"
