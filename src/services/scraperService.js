@@ -1,8 +1,15 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { searchByLocation } from './rapidApiService';
+import { EXPO_PUBLIC_APIFY_API_TOKEN, EXPO_PUBLIC_RAPIDAPI_KEY } from '@env';
 
-const APIFY_API_TOKEN = process.env.EXPO_PUBLIC_APIFY_API_TOKEN;
+// Use environment variables
+const APIFY_API_TOKEN = EXPO_PUBLIC_APIFY_API_TOKEN;
+const RAPIDAPI_KEY = EXPO_PUBLIC_RAPIDAPI_KEY;
+
+// Log to verify (remove after testing)
+console.log('🔑 APIFY Token loaded:', APIFY_API_TOKEN ? '✅ Yes' : '❌ No');
+console.log('🔑 RAPIDAPI Key loaded:', RAPIDAPI_KEY ? '✅ Yes' : '❌ No');
 
 // ✅ Only use actors that work (removed paid one)
 const BIZBUYSELL_ACTORS = [
@@ -21,6 +28,7 @@ const callApifyActor = async (actorId, input) => {
     
     try {
         console.log(`🚀 Starting actor: ${actorId}`);
+        console.log(`🔑 Using token: ${APIFY_API_TOKEN.substring(0, 10)}...`);
         
         const response = await axios.post(
             `https://api.apify.com/v2/acts/${actorId}/runs`,
@@ -30,7 +38,7 @@ const callApifyActor = async (actorId, input) => {
                 headers: { 
                     'Content-Type': 'application/json',
                 },
-                timeout: 60000, // 60 second timeout for the request
+                timeout: 60000,
             }
         );
 
@@ -38,7 +46,7 @@ const callApifyActor = async (actorId, input) => {
         console.log(`✅ Run started: ${runId}`);
         
         let attempts = 0;
-        const maxAttempts = 20; // Increased from 12 to 20 (40 seconds)
+        const maxAttempts = 20;
         
         while (attempts < maxAttempts) {
             await new Promise(resolve => setTimeout(resolve, 2000));
@@ -307,5 +315,19 @@ export const getCachedOpportunities = async () => {
     } catch (error) {
         console.error('Cache read error:', error);
         return null;
+    }
+};
+
+// Add test function
+export const testApifyToken = async () => {
+    try {
+        const response = await axios.get('https://api.apify.com/v2/user/me', {
+            params: { token: APIFY_API_TOKEN }
+        });
+        console.log('✅ Apify token valid! User:', response.data.data.username);
+        return true;
+    } catch (error) {
+        console.error('❌ Apify token invalid:', error.response?.data || error.message);
+        return false;
     }
 };
