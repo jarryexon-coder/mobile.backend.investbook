@@ -23,7 +23,8 @@
       "ios": {
         "image": "latest",
         "resourceClass": "default",
-        "buildConfiguration": "Release"
+        "buildConfiguration": "Release",
+        "scheme": "mobilefixed"
       },
       "env": {
         "RCT_NO_LAUNCH_PACKAGER": "true"
