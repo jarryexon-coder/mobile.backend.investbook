@@ -7,19 +7,26 @@
       "developmentClient": true,
       "distribution": "internal",
       "ios": {
-        "image": "latest"
+        "image": "latest",
+        "resourceClass": "default"
       }
     },
     "preview": {
       "distribution": "internal",
       "ios": {
-        "image": "latest"
+        "image": "latest",
+        "resourceClass": "default"
       }
     },
     "production": {
       "autoIncrement": true,
       "ios": {
-        "image": "latest"
+        "image": "latest",
+        "resourceClass": "default",
+        "buildProperties": {
+          "workspace": "ios/mobilefixed.xcworkspace",
+          "scheme": "mobilefixed"
+        }
       }
     }
   },

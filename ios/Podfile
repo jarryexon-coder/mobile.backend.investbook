@@ -17,20 +17,16 @@ target 'mobilefixed' do
   post_install do |installer|
     react_native_post_install(installer)
     
-    # ✅ Fix for boost checksum mismatch
     installer.pods_project.targets.each do |target|
       target.build_configurations.each do |config|
         config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
         config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
-      end
-    end
-    
-    # ✅ Force boost to use the correct version
-    installer.pods_project.targets.each do |target|
-      if target.name == "boost"
-        target.build_configurations.each do |config|
-          config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'arm64'
-        end
+        
+        # ✅ Disable warnings as errors for all pods
+        config.build_settings['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
+        config.build_settings['SWIFT_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
+        config.build_settings['GCC_WARN_INHIBIT_ALL_WARNINGS'] = 'YES'
+        config.build_settings['CLANG_WARN_DOCUMENTATION_COMMENTS'] = 'NO'
       end
     end
   end
