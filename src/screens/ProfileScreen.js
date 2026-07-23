@@ -1,147 +1,136 @@
 import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  Alert,
-} from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import Icon from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../hooks/useAuth';
 
 export default function ProfileScreen() {
   const { user, logout } = useAuth();
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     Alert.alert(
       'Logout',
       'Are you sure you want to logout?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Logout', 
+        {
+          text: 'Logout',
           style: 'destructive',
-          onPress: logout,
+          onPress: async () => {
+            await logout();
+            // ✅ No navigation needed! The app will automatically switch to Login screen
+            // because user state becomes null in AuthContext
+          },
         },
       ]
     );
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <View style={styles.container}>
       <View style={styles.header}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
-            {user?.username?.charAt(0).toUpperCase() || 'U'}
-          </Text>
-        </View>
-        <Text style={styles.username}>{user?.username}</Text>
-        <Text style={styles.email}>{user?.email}</Text>
-        <View style={styles.trustBadge}>
-          <Text style={styles.trustText}>Trust Score: {user?.trust_score || 50}</Text>
-        </View>
+        <Icon name="person-circle" size={80} color="#2563eb" />
+        <Text style={styles.name}>{user?.username || 'User'}</Text>
+        <Text style={styles.email}>{user?.email || 'No email'}</Text>
       </View>
 
-      <View style={styles.menuSection}>
-        <Text style={styles.sectionTitle}>Account Settings</Text>
+      <View style={styles.menu}>
         <TouchableOpacity style={styles.menuItem}>
+          <Icon name="person-outline" size={24} color="#1a1a1a" />
           <Text style={styles.menuText}>Edit Profile</Text>
+          <Icon name="chevron-forward" size={20} color="#999" style={styles.menuArrow} />
         </TouchableOpacity>
+
         <TouchableOpacity style={styles.menuItem}>
-          <Text style={styles.menuText}>Investment History</Text>
+          <Icon name="settings-outline" size={24} color="#1a1a1a" />
+          <Text style={styles.menuText}>Settings</Text>
+          <Icon name="chevron-forward" size={20} color="#999" style={styles.menuArrow} />
         </TouchableOpacity>
+
         <TouchableOpacity style={styles.menuItem}>
-          <Text style={styles.menuText}>Documents</Text>
+          <Icon name="notifications-outline" size={24} color="#1a1a1a" />
+          <Text style={styles.menuText}>Notifications</Text>
+          <Icon name="chevron-forward" size={20} color="#999" style={styles.menuArrow} />
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={[styles.menuItem, styles.logoutItem]} 
+          onPress={handleLogout}
+        >
+          <Icon name="log-out-outline" size={24} color="#ef4444" />
+          <Text style={[styles.menuText, styles.logoutText]}>Logout</Text>
+          <Icon name="chevron-forward" size={20} color="#999" style={styles.menuArrow} />
         </TouchableOpacity>
       </View>
 
-      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-        <Text style={styles.logoutText}>Logout</Text>
-      </TouchableOpacity>
-    </ScrollView>
+      <View style={styles.footer}>
+        <Text style={styles.version}>InvestBook v1.0.0</Text>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f0f4f8',
+    backgroundColor: '#f5f5f5',
   },
   header: {
-    backgroundColor: 'white',
+    alignItems: 'center',
     padding: 30,
-    alignItems: 'center',
+    backgroundColor: 'white',
     borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
+    borderBottomColor: '#e5e5e5',
   },
-  avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#2563eb',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 15,
-  },
-  avatarText: {
-    fontSize: 36,
+  name: {
+    fontSize: 22,
     fontWeight: 'bold',
-    color: 'white',
-  },
-  username: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1e293b',
+    color: '#1a1a1a',
+    marginTop: 10,
   },
   email: {
     fontSize: 14,
-    color: '#64748b',
-    marginTop: 5,
+    color: '#666',
+    marginTop: 4,
   },
-  trustBadge: {
-    marginTop: 10,
-    backgroundColor: '#dbeafe',
-    paddingHorizontal: 15,
-    paddingVertical: 5,
-    borderRadius: 20,
-  },
-  trustText: {
-    color: '#2563eb',
-    fontWeight: '600',
-  },
-  menuSection: {
-    backgroundColor: 'white',
+  menu: {
     marginTop: 20,
-    paddingVertical: 10,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#64748b',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
+    backgroundColor: 'white',
+    borderRadius: 12,
+    marginHorizontal: 16,
+    paddingVertical: 8,
   },
   menuItem: {
-    paddingHorizontal: 20,
-    paddingVertical: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    borderBottomColor: '#f0f0f0',
   },
   menuText: {
+    flex: 1,
     fontSize: 16,
-    color: '#1e293b',
+    color: '#1a1a1a',
+    marginLeft: 12,
   },
-  logoutButton: {
-    margin: 20,
-    marginTop: 30,
-    backgroundColor: '#ef4444',
-    padding: 15,
-    borderRadius: 8,
-    alignItems: 'center',
+  menuArrow: {
+    marginLeft: 'auto',
+  },
+  logoutItem: {
+    borderBottomWidth: 0,
+    marginTop: 4,
   },
   logoutText: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: '600',
+    color: '#ef4444',
+  },
+  footer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingBottom: 30,
+  },
+  version: {
+    color: '#999',
+    fontSize: 12,
   },
 });

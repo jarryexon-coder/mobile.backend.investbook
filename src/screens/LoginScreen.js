@@ -7,16 +7,17 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
-
-const API_URL = 'https://investbook-production.up.railway.app/api';
+import { useAuth } from '../hooks/useAuth';
 
 export default function LoginScreen({ navigation }) {
-  const [email, setEmail] = useState('investor3@example.com');
-  const [password, setPassword] = useState('SecurePass123!');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const { login } = useAuth();
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -26,140 +27,134 @@ export default function LoginScreen({ navigation }) {
 
     setLoading(true);
     try {
-      const response = await axios.post(`${API_URL}/login`, {
-        email,
-        password,
-      });
-
-      if (response.data.token) {
-        await AsyncStorage.setItem('token', response.data.token);
-        await AsyncStorage.setItem('user', JSON.stringify(response.data.user));
+      const result = await login(email, password);
+      if (result.success) {
         Alert.alert('Success', 'Login successful!');
-        navigation.replace({
-          index: 0,
-          routes: [{ name: 'Main' }],
-        });
+        // ✅ Navigation will happen automatically via AuthContext
+      } else {
+        Alert.alert('Login Failed', result.message || 'Invalid credentials');
       }
     } catch (error) {
-      Alert.alert(
-        'Login Failed',
-        error.response?.data?.message || 'Invalid credentials'
-      );
+      Alert.alert('Error', 'An error occurred during login.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleRegister = async () => {
-    try {
-      const response = await axios.post(`${API_URL}/register`, {
-        username: email.split('@')[0],
-        email,
-        password,
-      });
-      Alert.alert('Success', 'User registered! Please login.');
-    } catch (error) {
-      Alert.alert(
-        'Registration Failed',
-        error.response?.data?.message || 'Error creating account'
-      );
-    }
-  };
-
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>InvestBook</Text>
-      <Text style={styles.subtitle}>Investment Platform</Text>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.header}>
+          <Text style={styles.title}>InvestBook</Text>
+          <Text style={styles.subtitle}>Investment Platform</Text>
+        </View>
 
-      <View style={styles.form}>
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-        />
+        <View style={styles.form}>
+          <TextInput
+            style={styles.input}
+            placeholder="Email"
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Password"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+          />
 
-        {loading ? (
-          <ActivityIndicator size="large" color="#007AFF" />
-        ) : (
-          <>
-            <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
-              <Text style={styles.buttonText}>Login</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.registerButton}
-              onPress={handleRegister}
-            >
-              <Text style={styles.registerButtonText}>Register</Text>
-            </TouchableOpacity>
-          </>
-        )}
-      </View>
-    </View>
+          <TouchableOpacity
+            style={styles.loginButton}
+            onPress={handleLogin}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="white" />
+            ) : (
+              <Text style={styles.loginButtonText}>Login</Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.registerLink}
+            onPress={() => navigation.navigate('Register')}
+          >
+            <Text style={styles.registerLinkText}>
+              Don't have an account? <Text style={styles.registerLinkHighlight}>Register</Text>
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: 'center',
     padding: 20,
-    backgroundColor: '#f5f5f5',
+  },
+  header: {
+    alignItems: 'center',
+    marginBottom: 40,
   },
   title: {
     fontSize: 36,
     fontWeight: 'bold',
-    textAlign: 'center',
-    color: '#007AFF',
+    color: '#1a1a1a',
   },
   subtitle: {
     fontSize: 18,
-    textAlign: 'center',
     color: '#666',
-    marginBottom: 30,
+    marginTop: 4,
   },
   form: {
-    marginTop: 20,
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 20,
   },
   input: {
-    backgroundColor: 'white',
+    backgroundColor: '#f9f9f9',
     borderRadius: 8,
-    padding: 15,
-    marginBottom: 12,
+    padding: 12,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: '#e5e5e5',
+    fontSize: 16,
+    marginBottom: 12,
   },
   loginButton: {
-    backgroundColor: '#007AFF',
-    padding: 15,
+    backgroundColor: '#2563eb',
+    padding: 16,
     borderRadius: 8,
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: 8,
   },
-  buttonText: {
+  loginButtonText: {
     color: 'white',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
   },
-  registerButton: {
-    padding: 15,
-    borderRadius: 8,
+  registerLink: {
     alignItems: 'center',
-    marginTop: 10,
-    borderWidth: 1,
-    borderColor: '#007AFF',
+    marginTop: 16,
   },
-  registerButtonText: {
-    color: '#007AFF',
-    fontSize: 16,
+  registerLinkText: {
+    fontSize: 14,
+    color: '#666',
+  },
+  registerLinkHighlight: {
+    color: '#2563eb',
+    fontWeight: '600',
   },
 });

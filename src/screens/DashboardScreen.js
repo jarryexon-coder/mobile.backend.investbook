@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { useAuth } from '../hooks/useAuth';
 import axios from 'axios';
+import subscriptionService from '../services/subscriptionService';
 
 const API_URL = 'https://investbook-production.up.railway.app/api';
 
@@ -18,6 +19,7 @@ export default function DashboardScreen({ navigation }) {
     totalDeals: 0,
     totalInvested: 0,
     completedDeals: 0,
+    isSubscribed: false,
   });
   const [loading, setLoading] = useState(true);
 
@@ -29,12 +31,19 @@ export default function DashboardScreen({ navigation }) {
     try {
       // Fetch deals count
       const response = await axios.get(`${API_URL}/deals`, {
-        headers: { Authorization: token },
+        headers: { Authorization: `Bearer ${token}` },
       });
+
+      // Limit to 5 for free users
+      const allDeals = response.data || [];
+      const isSubscribed = await subscriptionService.isSubscribed();
+      const deals = isSubscribed ? allDeals : allDeals.slice(0, 5);
+
       setStats({
-        totalDeals: response.data.length || 0,
+        totalDeals: deals.length || 0,
         totalInvested: 5000, // Example - would come from commitments endpoint
         completedDeals: 1,
+        isSubscribed: isSubscribed,
       });
     } catch (error) {
       console.error('Error fetching stats:', error);
@@ -56,12 +65,25 @@ export default function DashboardScreen({ navigation }) {
       <View style={styles.header}>
         <Text style={styles.welcome}>Welcome, {user?.username}!</Text>
         <Text style={styles.subtext}>Your Investment Dashboard</Text>
+        {!stats.isSubscribed && (
+          <TouchableOpacity
+            style={styles.upgradeBanner}
+            onPress={() => navigation.navigate('Paywall')}
+          >
+            <Text style={styles.upgradeText}>
+              🔒 Upgrade to Premium for unlimited deals
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <View style={styles.statsContainer}>
         <View style={styles.statCard}>
           <Text style={styles.statNumber}>{stats.totalDeals}</Text>
           <Text style={styles.statLabel}>Available Deals</Text>
+          {!stats.isSubscribed && stats.totalDeals >= 5 && (
+            <Text style={styles.limitLabel}>Limited to 5</Text>
+          )}
         </View>
         <View style={styles.statCard}>
           <Text style={styles.statNumber}>${stats.totalInvested}</Text>
@@ -86,6 +108,17 @@ export default function DashboardScreen({ navigation }) {
       >
         <Text style={styles.quickActionText}>Create New Deal →</Text>
       </TouchableOpacity>
+
+      {!stats.isSubscribed && (
+        <TouchableOpacity
+          style={[styles.quickAction, styles.premiumAction]}
+          onPress={() => navigation.navigate('Paywall')}
+        >
+          <Text style={[styles.quickActionText, styles.premiumText]}>
+            ⭐ Upgrade to Premium
+          </Text>
+        </TouchableOpacity>
+      )}
     </ScrollView>
   );
 }
@@ -115,6 +148,18 @@ const styles = StyleSheet.create({
     color: '#bfdbfe',
     marginTop: 5,
   },
+  upgradeBanner: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 12,
+  },
+  upgradeText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
   statsContainer: {
     flexDirection: 'row',
     padding: 15,
@@ -143,6 +188,12 @@ const styles = StyleSheet.create({
     color: '#64748b',
     marginTop: 5,
   },
+  limitLabel: {
+    fontSize: 10,
+    color: '#ef4444',
+    marginTop: 2,
+    fontWeight: '600',
+  },
   quickAction: {
     backgroundColor: 'white',
     padding: 18,
@@ -161,5 +212,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#2563eb',
     fontWeight: '600',
+  },
+  premiumAction: {
+    backgroundColor: '#f59e0b',
+  },
+  premiumText: {
+    color: 'white',
   },
 });

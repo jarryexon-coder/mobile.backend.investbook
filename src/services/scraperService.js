@@ -2,19 +2,23 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { searchByLocation } from './rapidApiService';
 
-const APIFY_API_TOKEN = process.env.APIFY_API_TOKEN;
+const APIFY_API_TOKEN = process.env.EXPO_PUBLIC_APIFY_API_TOKEN;
 
-// ✅ CONFIRMED WORKING ACTORS
+// ✅ Only use actors that work (removed paid one)
 const BIZBUYSELL_ACTORS = [
     'shahidirfan~bizbuysell-scraper',
     'fatihtahta~bizbuysell-scraper',
-    'acquistion-automation~bizbuysell-scraper',
 ];
 
 const LOOPNET_ACTOR = 'crawlerbros~loopnet-scraper';
 
-// Helper to call Apify API
+// Helper to call Apify API with increased timeout
 const callApifyActor = async (actorId, input) => {
+    if (!APIFY_API_TOKEN) {
+        console.warn('⚠️ APIFY_API_TOKEN not set');
+        return [];
+    }
+    
     try {
         console.log(`🚀 Starting actor: ${actorId}`);
         
@@ -23,7 +27,10 @@ const callApifyActor = async (actorId, input) => {
             input,
             {
                 params: { token: APIFY_API_TOKEN },
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                },
+                timeout: 60000, // 60 second timeout for the request
             }
         );
 
@@ -31,14 +38,17 @@ const callApifyActor = async (actorId, input) => {
         console.log(`✅ Run started: ${runId}`);
         
         let attempts = 0;
-        const maxAttempts = 12;
+        const maxAttempts = 20; // Increased from 12 to 20 (40 seconds)
         
         while (attempts < maxAttempts) {
             await new Promise(resolve => setTimeout(resolve, 2000));
             
             const statusRes = await axios.get(
                 `https://api.apify.com/v2/actor-runs/${runId}`,
-                { params: { token: APIFY_API_TOKEN } }
+                { 
+                    params: { token: APIFY_API_TOKEN },
+                    timeout: 30000
+                }
             );
             
             const status = statusRes.data.data.status;
@@ -53,7 +63,8 @@ const callApifyActor = async (actorId, input) => {
                             token: APIFY_API_TOKEN,
                             format: 'json',
                             limit: 100
-                        }
+                        },
+                        timeout: 30000
                     }
                 );
                 return resultsRes.data;
@@ -95,7 +106,7 @@ export const scrapeBizBuySell = async (keyword = '', location = '', limit = 50) 
     const input = {
         startUrls: [{ url: url }],
         results_wanted: Math.min(limit, 50),
-        max_pages: 3,
+        max_pages: 2,
     };
 
     for (const actorId of BIZBUYSELL_ACTORS) {
@@ -113,28 +124,6 @@ export const scrapeBizBuySell = async (keyword = '', location = '', limit = 50) 
     
     console.log('⚠️ All BizBuySell actors failed');
     return [];
-};
-
-// LoopNet Scraper
-export const scrapeLoopNet = async (city = '', state = '', propertyType = 'office', limit = 20) => {
-    try {
-        const searchUrl = `https://www.loopnet.com/search/${propertyType}/${city}-${state}/for-sale/`;
-        
-        const input = {
-            searchUrls: [searchUrl],
-            maxItems: Math.min(limit, 10),
-            proxyConfiguration: {
-                useApifyProxy: true,
-                apifyProxyGroups: ['RESIDENTIAL']
-            }
-        };
-
-        const results = await callApifyActor(LOOPNET_ACTOR, input);
-        return results;
-    } catch (error) {
-        console.error('LoopNet error:', error.message);
-        throw error;
-    }
 };
 
 // Combined fetch function
@@ -191,7 +180,6 @@ export const fetchAllOpportunities = async (searchParams = {}) => {
         const searchLocation = location || `${city}, ${state}`;
         console.log(`📍 Searching in: ${searchLocation}`);
         
-        // Try RapidAPI first
         try {
             const loopData = await searchByLocation({
                 location: searchLocation,
@@ -223,7 +211,7 @@ export const fetchAllOpportunities = async (searchParams = {}) => {
                 console.log(`✅ LoopNet (RapidAPI): ${results.realEstate.length} results`);
             }
         } catch (rapidError) {
-            console.log('RapidAPI failed, falling back to Apify:', rapidError.message);
+            console.log('RapidAPI failed:', rapidError.message);
             throw rapidError;
         }
     } catch (error) {

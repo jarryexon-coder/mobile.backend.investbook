@@ -16,13 +16,13 @@ export const AuthProvider = ({ children }) => {
 
   const loadUser = async () => {
     try {
-      const token = await AsyncStorage.getItem('token');
+      const storedToken = await AsyncStorage.getItem('token');
       const userData = await AsyncStorage.getItem('user');
       
-      if (token && userData) {
-        setToken(token);
+      if (storedToken && userData) {
+        setToken(storedToken);
         setUser(JSON.parse(userData));
-        axios.defaults.headers.common['Authorization'] = token;
+        axios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
       }
     } catch (error) {
       console.error('Error loading user:', error);
@@ -33,19 +33,30 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     try {
+      console.log('🔐 Attempting login for:', email);
       const response = await axios.post(`${API_URL}/login`, { email, password });
       
       if (response.data.token) {
-        await AsyncStorage.setItem('token', response.data.token);
-        await AsyncStorage.setItem('user', JSON.stringify(response.data.user));
+        const userToken = response.data.token;
+        const userData = response.data.user;
         
-        setToken(response.data.token);
-        setUser(response.data.user);
-        axios.defaults.headers.common['Authorization'] = response.data.token;
+        // ✅ Store token and user
+        await AsyncStorage.setItem('token', userToken);
+        await AsyncStorage.setItem('user', JSON.stringify(userData));
         
-        return { success: true, user: response.data.user };
+        // ✅ Update state
+        setToken(userToken);
+        setUser(userData);
+        
+        // ✅ Set axios default header
+        axios.defaults.headers.common['Authorization'] = `Bearer ${userToken}`;
+        
+        console.log('✅ Login successful, token stored');
+        return { success: true, user: userData };
       }
+      return { success: false, message: 'Invalid credentials' };
     } catch (error) {
+      console.error('Login error:', error.response?.data);
       return { 
         success: false, 
         message: error.response?.data?.message || 'Login failed'
@@ -64,6 +75,7 @@ export const AuthProvider = ({ children }) => {
       if (response.data.message) {
         return { success: true, message: response.data.message };
       }
+      return { success: false, message: 'Registration failed' };
     } catch (error) {
       return { 
         success: false, 
@@ -73,11 +85,19 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = async () => {
-    await AsyncStorage.removeItem('token');
-    await AsyncStorage.removeItem('user');
-    setToken(null);
-    setUser(null);
-    delete axios.defaults.headers.common['Authorization'];
+    try {
+      await AsyncStorage.removeItem('token');
+      await AsyncStorage.removeItem('user');
+      
+      delete axios.defaults.headers.common['Authorization'];
+      
+      setToken(null);
+      setUser(null);
+      
+      console.log('✅ Logout successful');
+    } catch (error) {
+      console.error('Error during logout:', error);
+    }
   };
 
   const value = {
