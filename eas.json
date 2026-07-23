@@ -20,6 +20,9 @@
       "autoIncrement": true,
       "ios": {
         "image": "latest"
+      },
+      "env": {
+        "RCT_NO_LAUNCH_PACKAGER": "true"
       }
     }
   },
