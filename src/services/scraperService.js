@@ -2,25 +2,26 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { searchByLocation } from './rapidApiService';
 import { EXPO_PUBLIC_APIFY_API_TOKEN, EXPO_PUBLIC_RAPIDAPI_KEY } from '@env';
+import { generateMockBusinesses, generateMockRealEstate } from './mockDataGenerator';
 
 // Use environment variables
 const APIFY_API_TOKEN = EXPO_PUBLIC_APIFY_API_TOKEN;
 const RAPIDAPI_KEY = EXPO_PUBLIC_RAPIDAPI_KEY;
 
 console.log('🔑 APIFY Token loaded:', APIFY_API_TOKEN ? '✅ Yes' : '❌ No');
-console.log('🔑 RAPIDAPI Key loaded:', RAPIDAPI_KEY ? '✅ Yes' : '❌ No');
 
-// ✅ Working actors (verified with curl)
+// ✅ Winner: shahidirfan~bizbuysell-scraper - 50 results, $0.075, 8.6 seconds
+// ✅ Backup: fatihtahta~bizbuysell-scraper - 57+ results, still running
 const BIZBUYSELL_ACTORS = [
-    'parseforge~loopnet-scraper',
-    'memo23~loopnet-scraper-ppe',
+    'shahidirfan~bizbuysell-scraper',      // ⭐ BEST - 50 results, fast, reliable
+    'fatihtahta~bizbuysell-scraper',        // 🔄 Good backup - 57+ results
 ];
 
 // Helper to call Apify API
 const callApifyActor = async (actorId, input) => {
     if (!APIFY_API_TOKEN) {
         console.warn('⚠️ APIFY_API_TOKEN not set');
-        return [];
+        return null;
     }
     
     try {
@@ -42,7 +43,7 @@ const callApifyActor = async (actorId, input) => {
         console.log(`✅ Run started: ${runId}`);
         
         let attempts = 0;
-        const maxAttempts = 20;
+        const maxAttempts = 30;
         
         while (attempts < maxAttempts) {
             await new Promise(resolve => setTimeout(resolve, 2000));
@@ -66,7 +67,7 @@ const callApifyActor = async (actorId, input) => {
                         params: { 
                             token: APIFY_API_TOKEN,
                             format: 'json',
-                            limit: 100
+                            limit: 200
                         },
                         timeout: 30000
                     }
@@ -81,77 +82,87 @@ const callApifyActor = async (actorId, input) => {
         throw new Error('Run timed out');
     } catch (error) {
         console.error('API Error:', error.response?.data || error.message);
-        throw error;
+        return null;
     }
 };
 
-// Parse price from string with proper formatting
+// Parse price from string
 const parsePrice = (priceString) => {
     if (!priceString) return 0;
     if (typeof priceString === 'number') return priceString;
     
-    // Remove currency symbols and commas
-    let cleaned = priceString.replace(/[$€£,]/g, '').trim();
+    let cleaned = String(priceString).replace(/[$€£,]/g, '').trim();
     
-    // Handle "k" suffix (thousands)
     if (cleaned.toLowerCase().includes('k')) {
         cleaned = cleaned.toLowerCase().replace('k', '');
-        const num = parseFloat(cleaned);
-        return num * 1000; // Convert to full amount
+        return parseFloat(cleaned) * 1000;
     }
     
-    // Handle "M" suffix (millions)
     if (cleaned.toLowerCase().includes('m')) {
         cleaned = cleaned.toLowerCase().replace('m', '');
-        const num = parseFloat(cleaned);
-        return num * 1000000; // Convert to full amount
+        return parseFloat(cleaned) * 1000000;
     }
     
-    // Handle comma-separated numbers
-    const match = cleaned.match(/^([\d,.]+)/);
-    if (match) {
-        // Remove any remaining commas
-        const numStr = match[1].replace(/,/g, '');
-        return parseFloat(numStr) || 0;
-    }
-    
-    return parseFloat(cleaned) || 0;
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? 0 : num;
 };
 
-// Format price for display (adds commas and proper formatting)
+// Format price for display
 export const formatPrice = (price) => {
     if (!price || price === 0) return 'N/A';
-    
-    // If price is in thousands, convert to full number
-    let fullPrice = price;
-    
-    // Format with commas
-    const formatted = Number(fullPrice).toLocaleString('en-US', {
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0,
-    });
-    
-    return `$${formatted}`;
+    return `$${Math.round(price).toLocaleString()}`;
 };
 
-// Format price with K/M shorthand
-export const formatPriceShort = (price) => {
-    if (!price || price === 0) return 'N/A';
-    
-    if (price >= 1000000) {
-        return `$${(price / 1000000).toFixed(1)}M`;
-    } else if (price >= 1000) {
-        return `$${(price / 1000).toFixed(1)}K`;
-    } else {
-        return `$${price}`;
+// Clean source name
+const getCleanSource = (source) => {
+    if (!source) return 'Listing';
+    if (source.includes('LoopNet') || source.includes('RapidAPI')) {
+        return 'Property Listing';
     }
+    if (source.includes('BizBuySell') || source.includes('Apify')) {
+        return 'Business Listing';
+    }
+    if (source.includes('Mock') || source.includes('Sample')) {
+        return 'Sample Data';
+    }
+    return source;
 };
 
-// BizBuySell Scraper with state support
+// Map BizBuySell data to our format (optimized for shahidirfan's output)
+const mapBizBuySellData = (item) => {
+    // Handle different field names from different actors
+    const price = item.price || item.asking_price || 0;
+    const cashFlow = item.cash_flow || item.net_income || item.profit || 0;
+    const revenue = item.gross_revenue || item.annual_revenue || item.revenue || 0;
+    
+    return {
+        id: item.listing_id || item.id || `biz-${Math.random()}`,
+        title: item.title || item.name || 'Business for Sale',
+        price: parsePrice(price),
+        priceDisplay: formatPrice(parsePrice(price)),
+        revenue: parsePrice(revenue),
+        cashFlow: parsePrice(cashFlow),
+        location: item.location || item.city || `${item.city || ''}, ${item.state || ''}` || 'N/A',
+        city: item.city || '',
+        state: item.state || item.state_code || '',
+        category: item.category || item.listing_category || item.business_type || 'Business',
+        source: getCleanSource('Business Listing'),
+        url: item.url || '',
+        description: item.description || item.summary || '',
+        broker: item.broker_name || item.broker || item.broker_company || 'N/A',
+        brokerPhone: item.contact_phone || item.phone || '',
+        imageUrl: item.image_url || item.image || item.images?.[0] || '',
+        yearEstablished: item.year_established || '',
+        employees: item.employees_full_time || item.employees_part_time || '',
+        buildingSize: item.building_square_feet || '',
+        details: item,
+    };
+};
+
+// Main scraper function - uses the winning actor
 export const scrapeBizBuySell = async (keyword = '', location = '', state = '', limit = 50) => {
     const baseUrl = 'https://www.bizbuysell.com/businesses-for-sale/';
     const searchParams = [];
-    
     if (keyword) searchParams.push(`q=${encodeURIComponent(keyword)}`);
     if (location) searchParams.push(`location=${encodeURIComponent(location)}`);
     if (state) searchParams.push(`state=${encodeURIComponent(state)}`);
@@ -163,138 +174,57 @@ export const scrapeBizBuySell = async (keyword = '', location = '', state = '', 
         results_wanted: Math.min(limit, 50),
         max_pages: 2,
         searchType: 'For_Sale',
-        propertyType: 'all',
     };
 
+    let allResults = [];
+    
     for (const actorId of BIZBUYSELL_ACTORS) {
         try {
-            console.log(`🔍 Trying actor: ${actorId} with location: ${location || 'All States'}`);
+            console.log(`🔍 Trying actor: ${actorId}`);
             const results = await callApifyActor(actorId, input);
+            
             if (results && results.length > 0) {
                 console.log(`✅ ${actorId} returned ${results.length} results`);
-                return results;
+                
+                // Map results
+                const mappedResults = results
+                    .map(mapBizBuySellData)
+                    .filter(item => item && item.title && item.title !== '');
+                
+                allResults = [...allResults, ...mappedResults];
+                
+                // If we have enough results, stop
+                if (allResults.length >= limit) {
+                    console.log(`✅ Got ${allResults.length} results, enough for now`);
+                    break;
+                }
             }
         } catch (error) {
             console.log(`❌ ${actorId} failed: ${error.message}`);
         }
     }
     
-    console.log('⚠️ All actors failed, using mock data');
-    return getMockBusinessData(location);
-};
-
-// Mock business data with different states
-const getMockBusinessData = (location = 'Various') => {
-    const businesses = [
-        {
-            id: 'mock1',
-            title: 'Tech Startup for Sale',
-            price: 450000,
-            revenue: 120000,
-            cashFlow: 85000,
-            location: 'Austin, TX',
-            state: 'TX',
-            category: 'Technology',
-            source: 'Mock Data',
-            description: 'Established SaaS company with recurring revenue.',
-            broker: 'TechBiz Brokers',
-            imageUrl: 'https://images.unsplash.com/photo-1531482615713-2afd69097998?w=400',
-        },
-        {
-            id: 'mock2',
-            title: 'Coffee Shop Franchise',
-            price: 250000,
-            revenue: 80000,
-            cashFlow: 55000,
-            location: 'Portland, OR',
-            state: 'OR',
-            category: 'Food & Beverage',
-            source: 'Mock Data',
-            description: 'Popular coffee shop with loyal customer base.',
-            broker: 'Main Street Advisors',
-            imageUrl: 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=400',
-        },
-        {
-            id: 'mock3',
-            title: 'Construction Company',
-            price: 680000,
-            revenue: 200000,
-            cashFlow: 120000,
-            location: 'Denver, CO',
-            state: 'CO',
-            category: 'Construction',
-            source: 'Mock Data',
-            description: 'Established construction company with 10+ years of experience.',
-            broker: 'Commercial Realty Group',
-            imageUrl: 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?w=400',
-        },
-        {
-            id: 'mock4',
-            title: 'Retail Store Chain',
-            price: 320000,
-            revenue: 150000,
-            cashFlow: 75000,
-            location: 'Miami, FL',
-            state: 'FL',
-            category: 'Retail',
-            source: 'Mock Data',
-            description: 'Thriving retail business with multiple locations.',
-            broker: 'Retail Specialists Inc',
-            imageUrl: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=400',
-        },
-        {
-            id: 'mock5',
-            title: 'Digital Marketing Agency',
-            price: 180000,
-            revenue: 90000,
-            cashFlow: 60000,
-            location: 'New York, NY',
-            state: 'NY',
-            category: 'Marketing',
-            source: 'Mock Data',
-            description: 'Full-service digital marketing agency with 50+ active clients.',
-            broker: 'Digital Business Brokers',
-            imageUrl: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=400',
-        },
-        {
-            id: 'mock6',
-            title: 'Restaurant Chain',
-            price: 550000,
-            revenue: 180000,
-            cashFlow: 95000,
-            location: 'Chicago, IL',
-            state: 'IL',
-            category: 'Food & Beverage',
-            source: 'Mock Data',
-            description: 'Popular restaurant chain with 3 locations.',
-            broker: 'Food Service Advisors',
-            imageUrl: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=400',
-        },
-    ];
-    
-    // If location is specified, try to match it
-    if (location && location !== 'Various') {
-        const matching = businesses.filter(b => 
-            b.location.toLowerCase().includes(location.toLowerCase()) ||
-            b.state.toLowerCase().includes(location.toLowerCase())
-        );
-        return matching.length > 0 ? matching : businesses;
+    if (allResults.length > 0) {
+        console.log(`📊 Total results: ${allResults.length}`);
+        return allResults.slice(0, limit);
     }
     
-    return businesses;
+    // If all actors failed, use mock data
+    console.log('⚠️ All actors failed, using mock data');
+    return generateMockBusinesses(location || 'United States', limit);
 };
 
-// Combined fetch function with nationwide support
+// Combined fetch function
 export const fetchAllOpportunities = async (searchParams = {}) => {
     const {
         keyword = '',
         location = '',
         state = '',
         city = '',
-        propertyType = 'office',
+        propertyType = 'all',
         limit = 50,
         searchType = 'For_Sale',
-        nationwide = true, // New flag for nationwide search
+        nationwide = true,
     } = searchParams;
 
     const results = {
@@ -304,146 +234,91 @@ export const fetchAllOpportunities = async (searchParams = {}) => {
         errors: [],
     };
 
-    // 1. Fetch BizBuySell using Apify actors with nationwide support
+    // Fetch businesses using Apify
     try {
-        console.log('🔍 Fetching BizBuySell data...');
+        console.log('🔍 Fetching business listings...');
         let searchLocation = location || city || '';
         let searchState = state || '';
         
-        // If no location specified and nationwide is true, search broadly
         if (!searchLocation && !searchState && nationwide) {
             searchLocation = 'United States';
             console.log('📍 Searching nationwide for businesses');
         }
         
-        const bizData = await scrapeBizBuySell(
-            keyword, 
-            searchLocation, 
-            searchState, 
-            Math.min(limit, 50)
-        );
+        const data = await scrapeBizBuySell(keyword, searchLocation, searchState, Math.min(limit, 50));
         
-        if (bizData && bizData.length > 0) {
-            results.businesses = bizData.map(item => ({
-                id: item.listing_id || item.id || `biz-${Math.random()}`,
-                title: item.title || item.name || 'Business for Sale',
-                price: parsePrice(item.price || item.price_display),
-                priceDisplay: formatPrice(parsePrice(item.price || item.price_display)),
-                revenue: parsePrice(item.revenue || item.gross_revenue),
-                cashFlow: parsePrice(item.cash_flow || item.net_income),
-                location: item.location || item.city || item.state || 'N/A',
-                city: item.city || '',
-                state: item.state || '',
-                category: item.category || item.listing_category || 'Business',
-                source: item.source || 'BizBuySell',
-                url: item.url || '',
-                description: item.description || item.summary || '',
-                broker: item.broker_name || item.broker || 'N/A',
-                brokerPhone: item.contact_phone || '',
-                imageUrl: item.image_url || item.photo || '',
-                details: item,
-            }));
-            console.log(`✅ BizBuySell: ${results.businesses.length} results from ${searchLocation || 'nationwide'}`);
+        if (data && data.length > 0) {
+            results.businesses = data;
+            console.log(`✅ Businesses: ${results.businesses.length} results`);
         }
     } catch (error) {
-        console.error('BizBuySell failed:', error.message);
-        results.errors.push({ source: 'BizBuySell', error: error.message });
+        console.error('Business fetch failed:', error.message);
+        results.errors.push({ source: 'Business', error: error.message });
     }
 
-    // 2. Fetch LoopNet via RapidAPI with nationwide support
+    // Fetch properties via RapidAPI (LoopNet)
     try {
         let searchLocation = location || city || state || '';
         
-        // If no location specified, use a broad search
         if (!searchLocation && nationwide) {
             searchLocation = 'United States';
         }
         
         if (searchLocation) {
-            console.log(`📍 Searching LoopNet in: ${searchLocation}`);
+            console.log(`📍 Searching properties in: ${searchLocation}`);
             
-            const loopData = await searchByLocation({
-                location: searchLocation,
-                page: 1,
-                resultCount: Math.min(limit, 50),
-                searchType: searchType,
-                sortOrder: 'Recommended',
-                propertyType: propertyType,
-            });
-            
-            const listings = loopData.searchResults || [];
-            if (listings && listings.length > 0) {
-                results.realEstate = listings.map(item => ({
-                    id: item.id || item.propertyId || `prop-${Math.random()}`,
-                    title: item.address || 'Property for Sale',
-                    price: parsePrice(item.price),
-                    priceDisplay: formatPrice(parsePrice(item.price)),
-                    address: item.address || '',
-                    city: item.city || city || '',
-                    state: item.state || state || '',
-                    propertyType: item.propertyType || propertyType,
-                    source: 'LoopNet (RapidAPI)',
-                    url: item.url || '',
-                    description: item.description || '',
-                    imageUrl: item.photo || '',
-                    size: item.sizeLabel || '',
-                    details: item,
-                }));
-                console.log(`✅ LoopNet (RapidAPI): ${results.realEstate.length} results`);
+            try {
+                const loopData = await searchByLocation({
+                    location: searchLocation,
+                    page: 1,
+                    resultCount: Math.min(limit, 50),
+                    searchType: searchType,
+                    sortOrder: 'Recommended',
+                    propertyType: propertyType,
+                });
+                
+                const listings = loopData.searchResults || [];
+                if (listings && listings.length > 0) {
+                    results.realEstate = listings.map(item => ({
+                        id: item.id || item.propertyId || `prop-${Math.random()}`,
+                        title: item.address || 'Property for Sale',
+                        price: parsePrice(item.price),
+                        priceDisplay: formatPrice(parsePrice(item.price)),
+                        address: item.address || '',
+                        city: item.city || city || '',
+                        state: item.state || state || '',
+                        propertyType: item.propertyType || propertyType,
+                        source: getCleanSource('Property Listing'),
+                        url: item.url || '',
+                        description: item.description || '',
+                        imageUrl: item.photo || '',
+                        size: item.sizeLabel || '',
+                        details: item,
+                    }));
+                    console.log(`✅ Properties: ${results.realEstate.length} results`);
+                }
+            } catch (rapidError) {
+                console.log('⚠️ Property search failed, using mock data');
+                const mockRealEstate = generateMockRealEstate(searchLocation, Math.min(limit, 30));
+                results.realEstate = mockRealEstate;
+                results.errors.push({ source: 'Properties', error: rapidError.message });
             }
-        } else {
-            console.log('⚠️ No location specified, skipping LoopNet search');
         }
     } catch (error) {
-        console.error('LoopNet failed:', error.message);
-        results.errors.push({ source: 'LoopNet', error: error.message });
+        console.error('Property search failed:', error.message);
+        results.errors.push({ source: 'Properties', error: error.message });
     }
 
-    // If no results, add mock data with various states
-    if (results.businesses.length === 0 && results.realEstate.length === 0) {
-        console.log('⚠️ No data, using mock data with nationwide listings');
-        results.businesses = getMockBusinessData(location || 'Various');
-        results.realEstate = [
-            {
-                id: 'r1',
-                title: 'Office Building Downtown',
-                price: 2500000,
-                priceDisplay: '$2,500,000',
-                address: '123 Main St, Denver, CO',
-                city: 'Denver',
-                state: 'CO',
-                propertyType: 'Office',
-                source: 'Mock Data',
-                description: 'Prime office space with long-term tenants.',
-                size: '15,000 SF',
-            },
-            {
-                id: 'r2',
-                title: 'Retail Shopping Center',
-                price: 4500000,
-                priceDisplay: '$4,500,000',
-                address: '456 Market St, Dallas, TX',
-                city: 'Dallas',
-                state: 'TX',
-                propertyType: 'Retail',
-                source: 'Mock Data',
-                description: 'Mixed-use retail space with high foot traffic.',
-                size: '25,000 SF',
-            },
-            {
-                id: 'r3',
-                title: 'Industrial Warehouse',
-                price: 3200000,
-                priceDisplay: '$3,200,000',
-                address: '789 Industrial Blvd, Atlanta, GA',
-                city: 'Atlanta',
-                state: 'GA',
-                propertyType: 'Industrial',
-                source: 'Mock Data',
-                description: 'Large warehouse with loading docks and office space.',
-                size: '50,000 SF',
-            },
-        ];
+    // If no businesses, add mock businesses
+    if (results.businesses.length === 0) {
+        console.log('⚠️ Adding sample businesses');
+        results.businesses = generateMockBusinesses(location || 'United States', Math.min(limit, 20));
+    }
+
+    // If no real estate, add mock real estate
+    if (results.realEstate.length === 0) {
+        console.log('⚠️ Adding sample properties');
+        results.realEstate = generateMockRealEstate(location || 'United States', Math.min(limit, 15));
     }
 
     return results;
