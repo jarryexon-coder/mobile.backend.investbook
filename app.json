@@ -17,7 +17,8 @@
       "buildNumber": "1.0.0",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
-      }
+      },
+      "jsEngine": "hermes"
     },
     "android": {
       "adaptiveIcon": {
@@ -25,7 +26,8 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png"
       },
-      "package": "com.jerryjiya.mobilefixed"
+      "package": "com.jerryjiya.mobilefixed",
+      "jsEngine": "hermes"
     },
     "web": {
       "favicon": "./assets/favicon.png"

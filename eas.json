@@ -7,27 +7,23 @@
       "developmentClient": true,
       "distribution": "internal",
       "ios": {
-        "image": "latest",
-        "resourceClass": "default"
+        "image": "latest"
       }
     },
     "preview": {
       "distribution": "internal",
       "ios": {
-        "image": "latest",
-        "resourceClass": "default"
+        "image": "latest"
       }
     },
     "production": {
       "autoIncrement": true,
       "ios": {
-        "image": "latest",
-        "resourceClass": "default",
-        "buildConfiguration": "Release",
-        "scheme": "mobilefixed"
+        "image": "latest"
       },
       "env": {
-        "RCT_NO_LAUNCH_PACKAGER": "true"
+        "RCT_NO_LAUNCH_PACKAGER": "true",
+        "EXPO_USE_HERMES": "true"
       }
     }
   },
