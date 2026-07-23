@@ -73,7 +73,7 @@ export default function OpportunitiesScreen({ navigation }) {
         city: '',
         state: '',
         propertyType: 'all',
-        limit: 50,
+        limit: 100,
         nationwide: true, // Enable nationwide search
       };
       
