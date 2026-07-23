@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { ActivityIndicator, View, Text } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { AuthProvider, useAuth } from './src/hooks/useAuth';
+import { initializeActorHealth } from './src/services/actorHealthCheck';
 
 // Import screens
 import LoginScreen from './src/screens/LoginScreen';
@@ -14,14 +16,14 @@ import OpportunitiesScreen from './src/screens/OpportunitiesScreen';
 import DealsScreen from './src/screens/DealsScreen';
 import PortfolioScreen from './src/screens/PortfolioScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
-import SearchScreen from './src/screens/SearchScreen';
 import DealDetailScreen from './src/screens/DealDetailScreen';
 import TermsScreen from './src/screens/TermsScreen';
+import ChatScreen from './src/screens/ChatScreen';
 
-const Stack = createNativeStackNavigator();
+const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
-// Main Tabs Navigator
+// Main Tabs Navigator - INCLUDING CHAT
 function MainTabs() {
   return (
     <Tab.Navigator
@@ -36,6 +38,8 @@ function MainTabs() {
             iconName = focused ? 'briefcase' : 'briefcase-outline';
           } else if (route.name === 'Portfolio') {
             iconName = focused ? 'pie-chart' : 'pie-chart-outline';
+          } else if (route.name === 'Chat') {
+            iconName = focused ? 'chatbubble' : 'chatbubble-outline';
           } else if (route.name === 'Profile') {
             iconName = focused ? 'person' : 'person-outline';
           }
@@ -73,6 +77,11 @@ function MainTabs() {
         options={{ title: 'Portfolio' }}
       />
       <Tab.Screen 
+        name="Chat" 
+        component={ChatScreen} 
+        options={{ title: 'Chat' }}
+      />
+      <Tab.Screen 
         name="Profile" 
         component={ProfileScreen} 
         options={{ title: 'Profile' }}
@@ -81,68 +90,40 @@ function MainTabs() {
   );
 }
 
-// Main App Navigator
-function AppNavigator({ onTermsAccept }) {
-  return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="Login" component={LoginScreen} />
-      <Stack.Screen name="Register" component={RegisterScreen} />
-      <Stack.Screen 
-        name="Terms" 
-        component={TermsScreen}
-        initialParams={{ onAccept: onTermsAccept }}
-      />
-      <Stack.Screen name="MainTabs" component={MainTabs} />
-      <Stack.Screen 
-        name="DealDetail" 
-        component={DealDetailScreen} 
-        options={{ 
-          headerShown: true,
-          headerStyle: {
-            backgroundColor: '#2563eb',
-          },
-          headerTintColor: '#fff',
-          title: 'Deal Details'
-        }}
-      />
-    </Stack.Navigator>
-  );
-}
-
-export default function App() {
-  const [isLoading, setIsLoading] = useState(true);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+// App Navigator - uses auth context
+function AppNavigator() {
+  const { user, loading, isAuthenticated } = useAuth();
   const [hasAcceptedTerms, setHasAcceptedTerms] = useState(false);
 
   useEffect(() => {
-    checkAppState();
+    checkTerms();
   }, []);
 
-  const checkAppState = async () => {
-    try {
-      // Check if user is logged in
-      const token = await AsyncStorage.getItem('userToken');
-      setIsLoggedIn(!!token);
+useEffect(() => {
+  // Check actor health on app start
+  initializeActorHealth();
+}, []);
 
-      // Check if terms have been accepted
+  const checkTerms = async () => {
+    try {
       const termsAccepted = await AsyncStorage.getItem('termsAccepted');
-      const termsVersion = await AsyncStorage.getItem('termsVersion');
-      
-      // You can add version checking here if you update terms
       setHasAcceptedTerms(termsAccepted === 'true');
-      
     } catch (error) {
-      console.error('Error checking app state:', error);
-    } finally {
-      setIsLoading(false);
+      console.error('Error checking terms:', error);
     }
   };
 
-  const handleTermsAccept = () => {
-    setHasAcceptedTerms(true);
+  const handleTermsAccept = async () => {
+    try {
+      await AsyncStorage.setItem('termsAccepted', 'true');
+      await AsyncStorage.setItem('termsVersion', '1.0.0');
+      setHasAcceptedTerms(true);
+    } catch (error) {
+      console.error('Error saving terms:', error);
+    }
   };
 
-  if (isLoading) {
+  if (loading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" color="#2563eb" />
@@ -152,46 +133,22 @@ export default function App() {
   }
 
   return (
-    <NavigationContainer>
-      {!isLoggedIn ? (
-        // User is not logged in - show Login screen
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      {!isAuthenticated ? (
+        // Not logged in
+        <>
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="Register" component={RegisterScreen} />
-          <Stack.Screen name="Terms" component={TermsScreen} />
-          <Stack.Screen 
-            name="MainTabs" 
-            component={MainTabs} 
-            listeners={{
-              beforeRemove: (e) => {
-                // Prevent going back to login
-                e.preventDefault();
-              }
-            }}
-          />
-        </Stack.Navigator>
+        </>
       ) : !hasAcceptedTerms ? (
-        // User is logged in but hasn't accepted terms
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
-          <Stack.Screen 
-            name="Terms" 
-            component={TermsScreen}
-            initialParams={{ onAccept: handleTermsAccept }}
-          />
-          <Stack.Screen 
-            name="MainTabs" 
-            component={MainTabs}
-            listeners={{
-              beforeRemove: (e) => {
-                // Prevent going back to terms
-                e.preventDefault();
-              }
-            }}
-          />
-        </Stack.Navigator>
+        // Logged in but hasn't accepted terms
+        <Stack.Screen 
+          name="Terms" 
+          component={TermsScreen}
+        />
       ) : (
-        // User is logged in and has accepted terms
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
+        // Fully logged in
+        <>
           <Stack.Screen name="MainTabs" component={MainTabs} />
           <Stack.Screen 
             name="DealDetail" 
@@ -205,8 +162,19 @@ export default function App() {
               title: 'Deal Details'
             }}
           />
-        </Stack.Navigator>
+        </>
       )}
-    </NavigationContainer>
+    </Stack.Navigator>
+  );
+}
+
+// Main App - wrapped with AuthProvider
+export default function App() {
+  return (
+    <AuthProvider>
+      <NavigationContainer>
+        <AppNavigator />
+      </NavigationContainer>
+    </AuthProvider>
   );
 }

@@ -52,7 +52,8 @@ export default function RegisterScreen({ navigation }) {
         Alert.alert('Registration Failed', result.message || 'Failed to create account');
       }
     } catch (error) {
-      Alert.alert('Error', 'An error occurred during registration.');
+      console.error('Registration error:', error);
+      Alert.alert('Error', 'An error occurred during registration. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -74,6 +75,8 @@ export default function RegisterScreen({ navigation }) {
             value={username}
             onChangeText={setUsername}
             autoCapitalize="none"
+            textContentType="username"
+            autoComplete="username"
           />
           {errors.username && <Text style={styles.errorText}>{errors.username}</Text>}
         </View>
@@ -87,6 +90,8 @@ export default function RegisterScreen({ navigation }) {
             onChangeText={setEmail}
             autoCapitalize="none"
             keyboardType="email-address"
+            textContentType="emailAddress"
+            autoComplete="email"
           />
           {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
         </View>
@@ -99,6 +104,9 @@ export default function RegisterScreen({ navigation }) {
             value={password}
             onChangeText={setPassword}
             secureTextEntry
+            textContentType="newPassword"
+            autoComplete="new-password"
+            autoCorrect={false}
           />
           {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
         </View>
@@ -111,6 +119,9 @@ export default function RegisterScreen({ navigation }) {
             value={confirmPassword}
             onChangeText={setConfirmPassword}
             secureTextEntry
+            textContentType="newPassword"
+            autoComplete="new-password"
+            autoCorrect={false}
           />
           {errors.confirmPassword && <Text style={styles.errorText}>{errors.confirmPassword}</Text>}
         </View>

@@ -19,17 +19,12 @@ export default function TermsScreen({ navigation, route }) {
 
   const handleAccept = async () => {
     try {
-      // Save acceptance to AsyncStorage
       await AsyncStorage.setItem('termsAccepted', 'true');
       await AsyncStorage.setItem('termsVersion', TERMS_VERSION);
       await AsyncStorage.setItem('termsAcceptedDate', new Date().toISOString());
       
-      if (onAccept) {
-        onAccept();
-      } else {
-        // Navigate to main app
-        navigation.replace('MainTabs');
-      }
+      // Navigate to main app
+      navigation.replace('MainTabs');
     } catch (error) {
       console.error('Error saving terms acceptance:', error);
       Alert.alert('Error', 'Failed to save acceptance. Please try again.');
@@ -149,27 +144,8 @@ export default function TermsScreen({ navigation, route }) {
                 'Terms Required',
                 'You must accept the Terms of Service to use InvestBook.',
                 [
-                  { 
-                    text: 'Accept', 
-                    onPress: () => setAccepted(true) 
-                  },
-                  { 
-                    text: 'Exit', 
-                    style: 'cancel',
-                    onPress: () => {
-                      // Handle exit - close app or go back
-                      Alert.alert('Exit', 'Are you sure you want to exit the app?', [
-                        { text: 'Cancel', style: 'cancel' },
-                        { text: 'Exit', onPress: () => {
-                          // For React Native, this will close the app
-                          // Note: This might not work in all environments
-                          if (navigation.canGoBack()) {
-                            navigation.popToTop();
-                          }
-                        } }
-                      ]);
-                    }
-                  }
+                  { text: 'Accept', onPress: handleAccept },
+                  { text: 'Exit', style: 'cancel' }
                 ]
               );
             }}

@@ -10,8 +10,8 @@ const RAPIDAPI_KEY = EXPO_PUBLIC_RAPIDAPI_KEY;
 
 console.log('🔑 APIFY Token loaded:', APIFY_API_TOKEN ? '✅ Yes' : '❌ No');
 
-// ✅ Primary: memo23~loopnet-scraper-ppe - 1000+ results!
-// ✅ Backup: shahidirfan~bizbuysell-scraper - 50 results
+// ✅ Primary: memo23~loopnet-scraper-ppe - 1000+ results (NEEDS SUBSCRIPTION)
+// ⚠️ Note: These actors require subscription to work via API
 const BIZBUYSELL_ACTORS = [
     'memo23~loopnet-scraper-ppe',        // ⭐ BEST - 1000+ properties
     'shahidirfan~bizbuysell-scraper',     // Backup for businesses
@@ -40,7 +40,7 @@ const callApifyActor = async (actorId, input, retries = 2) => {
                     headers: { 
                         'Content-Type': 'application/json',
                     },
-                    timeout: 120000, // 2 minutes for larger runs
+                    timeout: 120000,
                 }
             );
 
@@ -48,7 +48,7 @@ const callApifyActor = async (actorId, input, retries = 2) => {
             console.log(`✅ Run started: ${runId}`);
             
             let attempts = 0;
-            const maxAttempts = 60; // Longer wait for large datasets
+            const maxAttempts = 60;
             
             while (attempts < maxAttempts) {
                 await new Promise(resolve => setTimeout(resolve, 2000));
@@ -72,7 +72,7 @@ const callApifyActor = async (actorId, input, retries = 2) => {
                             params: { 
                                 token: APIFY_API_TOKEN,
                                 format: 'json',
-                                limit: 1000  // Get up to 1000 results
+                                limit: 1000
                             },
                             timeout: 60000
                         }
@@ -86,7 +86,16 @@ const callApifyActor = async (actorId, input, retries = 2) => {
             
             throw new Error('Run timed out');
         } catch (error) {
-            console.error(`❌ Attempt ${attempt + 1} failed:`, error.response?.data || error.message);
+            const errorMsg = error.response?.data || error.message;
+            console.error(`❌ Attempt ${attempt + 1} failed:`, errorMsg);
+            
+            // If it's a subscription error, don't retry
+            if (errorMsg?.error?.message?.includes('User was not found') || 
+                errorMsg?.includes('User was not found')) {
+                console.log(`⚠️ Actor ${actorId} requires subscription, skipping...`);
+                return null;
+            }
+            
             if (attempt === retries) {
                 return null;
             }
@@ -140,13 +149,11 @@ const getCleanSource = (source) => {
 
 // Map LoopNet data from memo23
 const mapLoopNetData = (item) => {
-    // Try multiple price fields
     let price = 0;
     if (item.priceNumeric) price = parseFloat(item.priceNumeric);
     else if (item.price) price = parsePrice(item.price);
     else if (item.formattedPrice) price = parsePrice(item.formattedPrice);
     
-    // Get location
     const location = [item.city, item.state, item.country].filter(Boolean).join(', ');
     
     return {
@@ -243,8 +250,19 @@ const saveToCache = async (data) => {
     }
 };
 
-// Main scraper function with caching
+// Main scraper function - TRY CACHE FIRST
 export const scrapeBizBuySell = async (keyword = '', location = '', state = '', limit = 50) => {
+    // First check cache - this is fast and works even without subscription
+    console.log('🔍 Checking cache first...');
+    const cached = await getCachedData();
+    if (cached && cached.length > 0) {
+        console.log(`📦 Using cached data: ${cached.length} results`);
+        return cached.slice(0, limit);
+    }
+    
+    // If no cache, try actors (may require subscription)
+    console.log('🔄 No cache found, trying actors...');
+    
     const baseUrl = 'https://www.bizbuysell.com/businesses-for-sale/';
     const searchParams = [];
     if (keyword) searchParams.push(`q=${encodeURIComponent(keyword)}`);
@@ -258,7 +276,6 @@ export const scrapeBizBuySell = async (keyword = '', location = '', state = '', 
         results_wanted: Math.min(limit, 50),
         max_pages: 2,
         searchType: 'For_Sale',
-        // Memo23 specific options
         us: true,
         uk: false,
         detailed: true,
@@ -296,19 +313,11 @@ export const scrapeBizBuySell = async (keyword = '', location = '', state = '', 
         }
     }
     
-    // If actors returned some results but not enough
+    // If actors returned some results
     if (allResults.length > 0) {
         console.log(`✅ Got ${allResults.length} results from actors`);
         await saveToCache(allResults);
         return allResults;
-    }
-    
-    // If no results from actors, try cache
-    console.log('🔄 No fresh data, checking cache...');
-    const cached = await getCachedData();
-    if (cached && cached.length > 0) {
-        console.log(`📦 Using cached data: ${cached.length} results`);
-        return cached.slice(0, limit);
     }
     
     // If all else fails, use mock data
@@ -326,7 +335,7 @@ export const fetchAllOpportunities = async (searchParams = {}) => {
         state = '',
         city = '',
         propertyType = 'all',
-        limit = 50,
+        limit = 100,
         searchType = 'For_Sale',
         nationwide = true,
     } = searchParams;
@@ -353,7 +362,6 @@ export const fetchAllOpportunities = async (searchParams = {}) => {
         const data = await scrapeBizBuySell(keyword, searchLocation, searchState, Math.min(limit, 50));
         
         if (data && data.length > 0) {
-            // Separate businesses from properties based on source
             const businesses = data.filter(item => 
                 item.category || item.cashFlow || item.revenue || 
                 (item.source && item.source.includes('Business'))
@@ -366,7 +374,6 @@ export const fetchAllOpportunities = async (searchParams = {}) => {
             results.businesses = businesses;
             results.realEstate = properties;
             
-            // Determine source
             if (results.businesses.length > 0) {
                 const firstItem = results.businesses[0];
                 results.source = firstItem.source?.includes('Sample') ? 'mock' : 'cached';
@@ -382,7 +389,7 @@ export const fetchAllOpportunities = async (searchParams = {}) => {
         results.errors.push({ source: 'Business', error: error.message });
     }
 
-    // Fetch properties (with fallback)
+    // Fetch properties
     try {
         let searchLocation = location || city || state || '';
         

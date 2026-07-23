@@ -27,7 +27,10 @@ export default function LoginScreen({ navigation }) {
 
     setLoading(true);
     try {
+      console.log('🔐 Attempting login...');
       const result = await login(email, password);
+      console.log('📊 Login result:', result);
+      
       if (result.success) {
         Alert.alert('Success', 'Login successful!');
         // ✅ Navigation will happen automatically via AuthContext
@@ -35,7 +38,8 @@ export default function LoginScreen({ navigation }) {
         Alert.alert('Login Failed', result.message || 'Invalid credentials');
       }
     } catch (error) {
-      Alert.alert('Error', 'An error occurred during login.');
+      console.error('Login error:', error);
+      Alert.alert('Error', 'An error occurred during login. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -50,6 +54,9 @@ export default function LoginScreen({ navigation }) {
         <View style={styles.header}>
           <Text style={styles.title}>InvestBook</Text>
           <Text style={styles.subtitle}>Investment Platform</Text>
+          <Text style={styles.testCredentials}>
+            Test: test@test.com / password123
+          </Text>
         </View>
 
         <View style={styles.form}>
@@ -60,6 +67,7 @@ export default function LoginScreen({ navigation }) {
             onChangeText={setEmail}
             autoCapitalize="none"
             keyboardType="email-address"
+            textContentType="emailAddress"
           />
           <TextInput
             style={styles.input}
@@ -67,6 +75,7 @@ export default function LoginScreen({ navigation }) {
             value={password}
             onChangeText={setPassword}
             secureTextEntry
+            textContentType="password"
           />
 
           <TouchableOpacity
@@ -118,6 +127,15 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#666',
     marginTop: 4,
+  },
+  testCredentials: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 8,
+    backgroundColor: '#f0f0f0',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
   form: {
     backgroundColor: 'white',
