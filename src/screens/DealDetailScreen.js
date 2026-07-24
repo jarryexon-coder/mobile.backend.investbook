@@ -10,10 +10,12 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { useAuth } from '../hooks/useAuth';
 
 export default function DealDetailScreen({ route, navigation }) {
   const { deal } = route.params || {};
   const [loading, setLoading] = useState(!deal);
+  const { user } = useAuth();
 
   useEffect(() => {
     if (deal) {
@@ -283,13 +285,16 @@ export default function DealDetailScreen({ route, navigation }) {
         {canChat && chatId && !isMockDeal && (
           <TouchableOpacity
             style={styles.chatButton}
-            onPress={() => navigation.navigate('Chat', { 
-              dealId: String(chatId), 
-              dealTitle: deal.title || 'Deal',
-              price: deal.price || 0,
-              location: getLocation(deal) || '',
-              propertyType: getPropertyType(deal) || 'Commercial'
-            })}
+            onPress={() => {
+              navigation.navigate('Chat', { 
+                dealId: String(chatId), 
+                dealTitle: deal.title || 'Deal',
+                price: deal.price || 0,
+                location: getLocation(deal) || '',
+                propertyType: getPropertyType(deal) || 'Commercial',
+                userId: user?.id
+              });
+            }}
           >
             <Icon name="chatbubble-outline" size={20} color="white" />
             <Text style={styles.chatButtonText}>💬 Chat about this deal</Text>

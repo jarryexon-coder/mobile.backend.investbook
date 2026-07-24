@@ -27,19 +27,16 @@ export default function LoginScreen({ navigation }) {
 
     setLoading(true);
     try {
-      console.log('🔐 Attempting login...');
       const result = await login(email, password);
-      console.log('📊 Login result:', result);
-      
       if (result.success) {
-        Alert.alert('Success', 'Login successful!');
-        // ✅ Navigation will happen automatically via AuthContext
+        console.log('✅ Login successful, user data saved');
+        // Navigation will happen automatically via AuthContext
       } else {
         Alert.alert('Login Failed', result.message || 'Invalid credentials');
       }
     } catch (error) {
       console.error('Login error:', error);
-      Alert.alert('Error', 'An error occurred during login. Please try again.');
+      Alert.alert('Error', 'An error occurred during login.');
     } finally {
       setLoading(false);
     }

@@ -65,7 +65,7 @@ export default function ChatScreen({ route, navigation }) {
 
   const setupWebSocket = async () => {
     try {
-      const token = await AsyncStorage.getItem('token');
+      const token = await AsyncStorage.getItem('userToken');
       const socketUrl = API_URL.replace('/api', '');
       
       console.log('🔗 Connecting to WebSocket at:', socketUrl);
@@ -114,54 +114,41 @@ export default function ChatScreen({ route, navigation }) {
   const fetchMessages = async () => {
     try {
       setLoading(true);
-      const token = await AsyncStorage.getItem('token');
+      const token = await AsyncStorage.getItem('userToken');
       
       if (!token) {
-        console.log('⚠️ No token found, skipping messages fetch');
-        setMessages([]);
+        console.log('⚠️ No token found, redirecting to login');
+        Alert.alert(
+          'Login Required',
+          'Please login to access chat.',
+          [{ text: 'Login', onPress: () => navigation.navigate('Login') }]
+        );
         setLoading(false);
         return;
       }
 
       console.log(`📥 Fetching messages for deal ${chatDealId}...`);
       const response = await axios.get(`${API_URL}/deals/${chatDealId}/messages`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
       });
       
       setMessages(response.data || []);
       console.log(`✅ Fetched ${response.data?.length || 0} messages`);
     } catch (error) {
       console.log('⚠️ Error fetching messages:', error.message);
-      if (error.response?.status === 404) {
+      if (error.response?.status === 401) {
+        console.log('🔑 Authentication required');
+        Alert.alert(
+          'Session Expired',
+          'Please login again.',
+          [{ text: 'Login', onPress: () => navigation.navigate('Login') }]
+        );
+      } else if (error.response?.status === 404) {
         console.log('📭 No messages found for this deal yet');
         setMessages([]);
-      } else if (error.response?.status === 403) {
-        console.log('🔒 Access denied to this deal chat');
-        Alert.alert(
-          'Access Denied',
-          "You don't have permission to view this chat.",
-          [{ text: 'Go Back', onPress: () => navigation.goBack() }]
-        );
-      } else if (error.response?.status === 401) {
-        console.log('🔑 Authentication required for chat');
-        Alert.alert(
-          'Login Required',
-          'Please login to access chat.',
-          [
-            { 
-              text: 'Login', 
-              onPress: () => {
-                // Use navigation.reset to properly navigate to Login
-                navigation.reset({
-                  index: 0,
-                  routes: [{ name: 'Login' }],
-                });
-              }
-            },
-            { text: 'Cancel', style: 'cancel' }
-          ]
-        );
-        return;
       } else {
         setMessages([]);
       }
@@ -173,7 +160,7 @@ export default function ChatScreen({ route, navigation }) {
   // Add this function to sync the deal with the backend
   const syncDealWithBackend = async () => {
     try {
-      const token = await AsyncStorage.getItem('token');
+      const token = await AsyncStorage.getItem('userToken');
       if (!token) {
         Alert.alert('Login Required', 'Please login to sync this deal.');
         return;
@@ -191,7 +178,12 @@ export default function ChatScreen({ route, navigation }) {
             propertyType: route.params?.propertyType || 'Commercial'
           }
         },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { 
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          } 
+        }
       );
       
       if (response.data.success) {
@@ -220,7 +212,7 @@ export default function ChatScreen({ route, navigation }) {
     }
 
     try {
-      const token = await AsyncStorage.getItem('token');
+      const token = await AsyncStorage.getItem('userToken');
       if (!token) {
         Alert.alert('Login Required', 'Please login to send messages.');
         return;
@@ -231,7 +223,12 @@ export default function ChatScreen({ route, navigation }) {
       const response = await axios.post(
         `${API_URL}/deals/${chatDealId}/messages`,
         { message },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { 
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          } 
+        }
       );
 
       if (response.data) {
@@ -263,28 +260,12 @@ export default function ChatScreen({ route, navigation }) {
         return;
       }
       
-      if (error.response?.status === 403) {
+      if (error.response?.status === 401) {
+        Alert.alert('Session Expired', 'Please login again.', [
+          { text: 'Login', onPress: () => navigation.navigate('Login') }
+        ]);
+      } else if (error.response?.status === 403) {
         Alert.alert('Access Denied', "You don't have permission to send messages here.");
-      } else if (error.response?.status === 401) {
-        console.log('🔑 Authentication required for chat');
-        Alert.alert(
-          'Login Required',
-          'Please login to send messages.',
-          [
-            { 
-              text: 'Login', 
-              onPress: () => {
-                // Use navigation.reset to properly navigate to Login
-                navigation.reset({
-                  index: 0,
-                  routes: [{ name: 'Login' }],
-                });
-              }
-            },
-            { text: 'Cancel', style: 'cancel' }
-          ]
-        );
-        return;
       } else {
         Alert.alert('Error', 'Failed to send message. Please try again.');
       }

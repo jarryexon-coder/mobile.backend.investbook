@@ -16,13 +16,14 @@ export const AuthProvider = ({ children }) => {
 
   const loadUser = async () => {
     try {
-      const storedToken = await AsyncStorage.getItem('token');
-      const userData = await AsyncStorage.getItem('user');
+      const storedToken = await AsyncStorage.getItem('userToken');
+      const userData = await AsyncStorage.getItem('userData');
       
       if (storedToken && userData) {
         setToken(storedToken);
         setUser(JSON.parse(userData));
         axios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
+        console.log('✅ User session restored');
       }
     } catch (error) {
       console.error('Error loading user:', error);
@@ -40,18 +41,15 @@ export const AuthProvider = ({ children }) => {
         const userToken = response.data.token;
         const userData = response.data.user;
         
-        // ✅ Store token and user
-        await AsyncStorage.setItem('token', userToken);
-        await AsyncStorage.setItem('user', JSON.stringify(userData));
+        // Store both token and user data
+        await AsyncStorage.setItem('userToken', userToken);
+        await AsyncStorage.setItem('userData', JSON.stringify(userData));
         
-        // ✅ Update state
         setToken(userToken);
         setUser(userData);
-        
-        // ✅ Set axios default header
         axios.defaults.headers.common['Authorization'] = `Bearer ${userToken}`;
         
-        console.log('✅ Login successful, token stored');
+        console.log('✅ Login successful, session saved');
         return { success: true, user: userData };
       }
       return { success: false, message: 'Invalid credentials' };
@@ -86,8 +84,8 @@ export const AuthProvider = ({ children }) => {
 
   const logout = async () => {
     try {
-      await AsyncStorage.removeItem('token');
-      await AsyncStorage.removeItem('user');
+      await AsyncStorage.removeItem('userToken');
+      await AsyncStorage.removeItem('userData');
       
       delete axios.defaults.headers.common['Authorization'];
       
