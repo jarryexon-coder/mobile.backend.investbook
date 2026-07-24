@@ -21,7 +21,7 @@ import { useAuth } from '../hooks/useAuth';
 const API_URL = EXPO_PUBLIC_API_URL;
 
 export default function ChatScreen({ route, navigation }) {
-  const { dealId, dealTitle, userId } = route.params || {};
+  const { dealId, dealTitle, price, location, propertyType } = route.params || {};
   const { token, user } = useAuth();
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
@@ -29,24 +29,23 @@ export default function ChatScreen({ route, navigation }) {
   const [socket, setSocket] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const [syncedDealId, setSyncedDealId] = useState(null);
+  const [isSyncing, setIsSyncing] = useState(false);
   const flatListRef = useRef(null);
 
-  // Normalize the deal ID - could be a string ID, propertyId, or listing_id
+  // Normalize the deal ID
   const chatDealId = dealId ? String(dealId) : null;
 
   // Check if this is a mock deal
   const isMockDeal = chatDealId && 
                      (chatDealId.startsWith('mock-') || 
                       chatDealId.startsWith('item-') ||
-                      chatDealId === 'undefined' ||
-                      chatDealId === 'null');
+                      chatDealId.startsWith('prop-'));
 
   useEffect(() => {
-    // If it's a mock deal or no ID, show a friendly message
     if (isMockDeal || !chatDealId) {
       Alert.alert(
         'Chat Unavailable',
-        'Chat is only available for real listings. Please select a valid listing to chat about.',
+        'Chat is only available for real listings.',
         [{ text: 'Go Back', onPress: () => navigation.goBack() }]
       );
       setLoading(false);
@@ -55,8 +54,19 @@ export default function ChatScreen({ route, navigation }) {
 
     console.log(`💬 Opening chat for deal: ${chatDealId} (${dealTitle || 'Untitled'})`);
     
-    fetchMessages();
-    setupWebSocket();
+    // If we have a token, fetch messages
+    if (token) {
+      fetchMessages();
+      setupWebSocket();
+    } else {
+      console.log('⚠️ No token available, redirecting to login');
+      Alert.alert(
+        'Login Required',
+        'Please login to access chat.',
+        [{ text: 'Login', onPress: () => navigation.navigate('Login') }]
+      );
+      setLoading(false);
+    }
 
     return () => {
       if (socket) {
@@ -64,7 +74,7 @@ export default function ChatScreen({ route, navigation }) {
         console.log('🔌 WebSocket disconnected');
       }
     };
-  }, [chatDealId]);
+  }, [chatDealId, token]);
 
   const setupWebSocket = async () => {
     try {
@@ -93,7 +103,7 @@ export default function ChatScreen({ route, navigation }) {
 
       newSocket.on('new_message', (data) => {
         console.log('📩 New message received:', data);
-        if (data.deal_id === chatDealId) {
+        if (data.deal_id === chatDealId || data.deal_id === syncedDealId) {
           setMessages(prev => [...prev, data.message]);
           setTimeout(() => {
             flatListRef.current?.scrollToEnd({ animated: true });
@@ -119,11 +129,6 @@ export default function ChatScreen({ route, navigation }) {
       
       if (!token) {
         console.log('⚠️ No token available');
-        Alert.alert(
-          'Login Required',
-          'Please login to access chat.',
-          [{ text: 'OK' }]
-        );
         setLoading(false);
         return;
       }
@@ -142,9 +147,6 @@ export default function ChatScreen({ route, navigation }) {
       console.log('⚠️ Error fetching messages:', error.message);
       if (error.response?.status === 401) {
         Alert.alert('Session Expired', 'Please login again.');
-      } else if (error.response?.status === 404) {
-        console.log('📭 No messages found for this deal yet');
-        setMessages([]);
       } else {
         setMessages([]);
       }
@@ -153,17 +155,15 @@ export default function ChatScreen({ route, navigation }) {
     }
   };
 
-  // Sync the deal with the backend
   const syncDealWithBackend = async () => {
     try {
       if (!token) {
         console.log('❌ No token available for sync');
-        Alert.alert('Login Required', 'Please login to sync this deal.');
         return false;
       }
       
       console.log('🔄 Syncing deal with backend...');
-      console.log('🔑 Token length:', token.length);
+      console.log(`🔑 Token length: ${token.length}`);
       
       const response = await axios.post(
         `${API_URL}/deals/sync`,
@@ -171,21 +171,18 @@ export default function ChatScreen({ route, navigation }) {
           dealId: chatDealId,
           dealData: {
             title: dealTitle || 'Property Listing',
-            price: route.params?.price || 0,
-            location: route.params?.location || '',
-            propertyType: route.params?.propertyType || 'Commercial'
+            price: price || 0,
+            location: location || '',
+            propertyType: propertyType || 'Commercial'
           }
         },
         { 
           headers: { 
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
-          },
-          timeout: 10000
+          } 
         }
       );
-      
-      console.log('📊 Sync response:', response.data);
       
       if (response.data.success) {
         const newDealId = response.data.deal.id;
@@ -196,21 +193,6 @@ export default function ChatScreen({ route, navigation }) {
       return false;
     } catch (error) {
       console.log('❌ Failed to sync deal:', error.message);
-      if (error.response) {
-        console.log('📊 Status:', error.response.status);
-        console.log('📊 Data:', error.response.data);
-      }
-      if (error.response?.status === 401) {
-        Alert.alert(
-          'Session Expired',
-          'Please login again.',
-          [{ text: 'Login', onPress: () => navigation.navigate('Login') }]
-        );
-      } else if (error.response?.status === 403) {
-        Alert.alert('Access Denied', 'You don\'t have permission to create deals.');
-      } else {
-        Alert.alert('Error', 'Failed to sync deal. Please try again later.');
-      }
       return false;
     }
   };
@@ -228,7 +210,7 @@ export default function ChatScreen({ route, navigation }) {
         return;
       }
 
-      // Use the synced deal ID if available, otherwise use the original ID
+      // ✅ FIX: Use syncedDealId if available, otherwise use original
       const messageDealId = syncedDealId || chatDealId;
       console.log(`📤 Sending message to deal ID: ${messageDealId}`);
 
@@ -253,23 +235,24 @@ export default function ChatScreen({ route, navigation }) {
         console.log('✅ Message sent successfully');
       }
     } catch (error) {
-      console.log('⚠️ Error sending message:', error.message);
+      console.log(`⚠️ Error sending message (to ID: ${syncedDealId || chatDealId}):`, error.message);
       
-      // If we get a 404 and haven't synced yet, sync the deal
-      if (error.response?.status === 404 && !syncedDealId) {
+      if (error.response?.status === 404 && !syncedDealId && !isSyncing) {
+        // Only sync if we haven't synced yet
+        setIsSyncing(true);
         console.log('🔄 Deal not found, syncing...');
         const newId = await syncDealWithBackend();
+        setIsSyncing(false);
         if (newId) {
-          // Now retry with the new ID
-          setSyncedDealId(newId);
+          console.log(`✅ Synced with ID: ${newId}, retrying...`);
+          // Retry sending the message with the new ID
           setTimeout(() => {
             sendMessage();
           }, 500);
         }
-      } else if (error.response?.status === 401) {
-        Alert.alert('Session Expired', 'Please login again.', [
-          { text: 'Login', onPress: () => navigation.navigate('Login') }
-        ]);
+      } else if (error.response?.status === 404 && syncedDealId) {
+        // If we already synced but still get 404, the deal might not exist
+        Alert.alert('Error', 'Deal not found. Please try again later.');
       } else {
         Alert.alert('Error', 'Failed to send message. Please try again.');
       }
@@ -277,7 +260,7 @@ export default function ChatScreen({ route, navigation }) {
   };
 
   const renderMessage = ({ item }) => {
-    const isOwnMessage = item.user_id === userId || item.user_id === user?.id;
+    const isOwnMessage = item.user_id === user?.id;
     return (
       <View style={[styles.messageContainer, isOwnMessage ? styles.ownMessage : styles.otherMessage]}>
         {!isOwnMessage && (
@@ -313,6 +296,7 @@ export default function ChatScreen({ route, navigation }) {
           </Text>
           <Text style={styles.headerSubtitle}>
             {messages.length} {messages.length === 1 ? 'message' : 'messages'}
+            {syncedDealId && ` (ID: ${syncedDealId})`}
           </Text>
         </View>
 
