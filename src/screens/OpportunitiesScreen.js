@@ -289,13 +289,8 @@ export default function OpportunitiesScreen({ navigation }) {
     const title = getDisplayTitle(item);
     const location = getDisplayLocation(item);
     
-    // Check if this is a real listing
-    const isReal = item.propertyId || item.listing_id || 
-                  (item.id && typeof item.id === 'string' && !item.id.startsWith('mock-') && !item.id.startsWith('prop-'));
-    const isSampleData = item.source === 'Sample Data' || item.source === 'Mock Data';
-    
     return (
-      <View style={[styles.card, !isReal && styles.mockCard]}>
+      <View style={styles.card}>
         <TouchableOpacity
           style={styles.cardContent}
           onPress={() => navigation.navigate('DealDetail', { deal: item })}
@@ -316,22 +311,11 @@ export default function OpportunitiesScreen({ navigation }) {
                 <Text style={styles.cardSubtype}> • {subtype}</Text>
               )}
             </View>
-            <View style={styles.sourceBadge}>
-              <Text style={styles.sourceText}>
-                {isReal ? '🔹 Real' : '📊 Sample'}
-              </Text>
-            </View>
           </View>
           
           <Text style={styles.cardLocation}>
             📍 {location}
           </Text>
-          
-          {isSampleData && !isReal && (
-            <View style={styles.mockBadge}>
-              <Text style={styles.mockBadgeText}>📊 Sample Data</Text>
-            </View>
-          )}
         </TouchableOpacity>
       </View>
     );
@@ -639,11 +623,6 @@ const styles = StyleSheet.create({
     elevation: 2,
     overflow: 'hidden',
   },
-  mockCard: {
-    opacity: 0.8,
-    borderWidth: 1,
-    borderColor: '#f0f0f0',
-  },
   cardContent: {
     padding: 14,
   },
@@ -698,18 +677,6 @@ const styles = StyleSheet.create({
   sourceText: {
     fontSize: 10,
     color: '#666',
-  },
-  mockBadge: {
-    marginTop: 6,
-    backgroundColor: '#fef3c7',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-    alignSelf: 'flex-start',
-  },
-  mockBadgeText: {
-    fontSize: 10,
-    color: '#92400e',
   },
   loadingContainer: {
     flex: 1,
