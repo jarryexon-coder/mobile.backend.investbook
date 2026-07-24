@@ -37,20 +37,47 @@ const formatPrice = (price) => {
 
 // Helper to get display title
 const getDisplayTitle = (item) => {
+  // Try all possible title fields
   if (item.title) return item.title;
   if (item.name) return item.name;
-  if (item.address) return `Property at ${item.address}`;
   if (item.listingName) return item.listingName;
+  if (item.address) {
+    // If address is available, use it as title
+    const addr = item.address;
+    if (addr.includes(',')) {
+      return addr.split(',')[0].trim();
+    }
+    return addr;
+  }
+  if (item.listing_title) return item.listing_title;
+  if (item.business_name) return item.business_name;
+  
+  // For LoopNet data, try to construct a title from available fields
+  if (item.propertyType) {
+    return `${item.propertyType} Property`;
+  }
+  if (item.category || item.listing_category) {
+    return `${item.category || item.listing_category} Business`;
+  }
+  
   return 'Property Listing';
 };
 
 // Helper to get display location
 const getDisplayLocation = (item) => {
+  // Try all possible location fields
   if (item.location) return item.location;
   if (item.address) return item.address;
   if (item.city && item.state) return `${item.city}, ${item.state}`;
   if (item.city) return item.city;
   if (item.state) return item.state;
+  if (item.country) return item.country;
+  
+  // For LoopNet data
+  if (item.city && item.country) return `${item.city}, ${item.country}`;
+  if (item.region) return item.region;
+  if (item.zip) return `Zip: ${item.zip}`;
+  
   return 'Location N/A';
 };
 

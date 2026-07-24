@@ -285,7 +285,10 @@ export default function DealDetailScreen({ route, navigation }) {
             style={styles.chatButton}
             onPress={() => navigation.navigate('Chat', { 
               dealId: String(chatId), 
-              dealTitle: deal.title || 'Deal' 
+              dealTitle: deal.title || 'Deal',
+              price: deal.price || 0,
+              location: getLocation(deal) || '',
+              propertyType: getPropertyType(deal) || 'Commercial'
             })}
           >
             <Icon name="chatbubble-outline" size={20} color="white" />

@@ -157,6 +157,48 @@ export default function ChatScreen({ route, navigation }) {
     }
   };
 
+  // Add this function to sync the deal with the backend
+  const syncDealWithBackend = async () => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      if (!token) {
+        Alert.alert('Login Required', 'Please login to sync this deal.');
+        return;
+      }
+      
+      console.log('🔄 Syncing deal with backend...');
+      const response = await axios.post(
+        `${API_URL}/deals/sync`,
+        {
+          dealId: chatDealId,
+          dealData: {
+            title: dealTitle || route.params?.title || 'Untitled Deal',
+            price: route.params?.price || 0,
+            location: route.params?.location || '',
+            propertyType: route.params?.propertyType || 'Commercial'
+          }
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      if (response.data.success) {
+        console.log('✅ Deal synced successfully');
+        Alert.alert('Success', 'Deal synced! Try sending your message again.');
+        // Now try to send the message again
+        sendMessage();
+      } else {
+        throw new Error('Sync failed');
+      }
+    } catch (error) {
+      console.log('❌ Failed to sync deal:', error.message);
+      Alert.alert(
+        'Sync Failed', 
+        'Unable to sync deal with the chat system. Please try again later.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
   const sendMessage = async () => {
     if (!inputText.trim()) return;
     if (!isConnected) {
@@ -188,11 +230,28 @@ export default function ChatScreen({ route, navigation }) {
       }
     } catch (error) {
       console.log('⚠️ Error sending message:', error.message);
+      
+      // Special handling for 404 - deal doesn't exist in backend yet
+      if (error.response?.status === 404) {
+        Alert.alert(
+          'Deal Not Synced',
+          'This deal hasn\'t been synced with our chat system yet. Would you like to sync it now?',
+          [
+            { 
+              text: 'Sync & Try Again', 
+              onPress: () => {
+                // Try to sync the deal first
+                syncDealWithBackend();
+              }
+            },
+            { text: 'Cancel', style: 'cancel' }
+          ]
+        );
+        return;
+      }
+      
       if (error.response?.status === 403) {
         Alert.alert('Access Denied', "You don't have permission to send messages here.");
-      } else if (error.response?.status === 404) {
-        Alert.alert('Deal Not Found', 'This deal no longer exists.');
-        navigation.goBack();
       } else if (error.response?.status === 401) {
         Alert.alert('Login Required', 'Please login to send messages.');
       } else {
