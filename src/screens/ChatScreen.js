@@ -162,17 +162,20 @@ export default function ChatScreen({ route, navigation }) {
     try {
       const token = await AsyncStorage.getItem('userToken');
       if (!token) {
+        console.log('❌ No token available for sync');
         Alert.alert('Login Required', 'Please login to sync this deal.');
         return false;
       }
       
       console.log('🔄 Syncing deal with backend...');
+      console.log('🔑 Token length:', token.length);
+      
       const response = await axios.post(
         `${API_URL}/deals/sync`,
         {
           dealId: chatDealId,
           dealData: {
-            title: dealTitle || route.params?.title || 'Untitled Deal',
+            title: dealTitle || 'Property Listing',
             price: route.params?.price || 0,
             location: route.params?.location || '',
             propertyType: route.params?.propertyType || 'Commercial'
@@ -182,23 +185,35 @@ export default function ChatScreen({ route, navigation }) {
           headers: { 
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
-          } 
+          },
+          timeout: 10000
         }
       );
+      
+      console.log('📊 Sync response:', response.data);
       
       if (response.data.success) {
         console.log('✅ Deal synced successfully');
         return true;
-      } else {
-        throw new Error('Sync failed');
       }
+      return false;
     } catch (error) {
       console.log('❌ Failed to sync deal:', error.message);
-      Alert.alert(
-        'Sync Failed', 
-        'Unable to sync deal with the chat system. Please try again later.',
-        [{ text: 'OK' }]
-      );
+      if (error.response) {
+        console.log('📊 Status:', error.response.status);
+        console.log('📊 Data:', error.response.data);
+      }
+      if (error.response?.status === 401) {
+        Alert.alert(
+          'Session Expired',
+          'Please login again.',
+          [{ text: 'Login', onPress: () => navigation.navigate('Login') }]
+        );
+      } else if (error.response?.status === 403) {
+        Alert.alert('Access Denied', 'You don\'t have permission to create deals.');
+      } else {
+        Alert.alert('Error', 'Failed to sync deal. Please try again later.');
+      }
       return false;
     }
   };
