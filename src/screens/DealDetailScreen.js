@@ -21,6 +21,30 @@ export default function DealDetailScreen({ route, navigation }) {
     }
   }, [deal]);
 
+  // Helper function to get the best price display
+  const getDisplayPrice = (deal) => {
+    if (deal.priceDisplay) return deal.priceDisplay;
+    if (deal.price) return `$${deal.price.toLocaleString()}`;
+    return 'N/A';
+  };
+
+  // Helper to get property type
+  const getPropertyType = (deal) => {
+    if (deal.propertyType) return deal.propertyType;
+    if (deal.category) return deal.category;
+    if (deal.propertySubtype) return deal.propertySubtype;
+    return null;
+  };
+
+  // Helper to get location
+  const getLocation = (deal) => {
+    if (deal.location) return deal.location;
+    if (deal.address) return deal.address;
+    if (deal.city && deal.state) return `${deal.city}, ${deal.state}`;
+    if (deal.city) return deal.city;
+    return null;
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -45,36 +69,65 @@ export default function DealDetailScreen({ route, navigation }) {
     );
   }
 
-  const isBizBuySell = deal.source === 'BizBuySell' || deal.source?.includes('BizBuySell');
-  const isLoopNet = deal.source === 'LoopNet (RapidAPI)' || deal.source?.includes('LoopNet');
+  // Determine data source
+  const isBizBuySell = deal.source === 'BizBuySell' || deal.source?.includes('BizBuySell') || deal.category;
+  const isLoopNet = deal.source === 'Property Listing' || deal.source?.includes('LoopNet') || deal.propertyType;
+  const isMockData = deal.source === 'Sample Data' || deal.source === 'Mock Data';
+
+  // Get the best image URL
+  const imageUrl = deal.imageUrl || 
+                   deal.image || 
+                   deal.photo || 
+                   (deal.images && deal.images.length > 0 ? deal.images[0] : null);
+
+  // Get broker info
+  const brokerName = deal.broker || deal.brokerName || deal.broker_company || null;
+  const brokerPhone = deal.brokerPhone || deal.contact_phone || null;
+  const brokerEmail = deal.brokerEmail || null;
+
+  // Get property facts
+  const propertyFacts = deal.details?.propertyFacts || deal.propertyFacts || null;
 
   return (
     <ScrollView style={styles.container}>
-      {deal.imageUrl ? (
+      {imageUrl ? (
         <Image
-          source={{ uri: deal.imageUrl }}
+          source={{ uri: imageUrl }}
           style={styles.headerImage}
           resizeMode="cover"
         />
-      ) : null}
+      ) : (
+        <View style={[styles.headerImage, styles.placeholderImage]}>
+          <Icon name="business-outline" size={60} color="#ccc" />
+        </View>
+      )}
 
       <View style={styles.content}>
         <View style={styles.headerRow}>
-          <Text style={styles.title}>{deal.title || 'Deal'}</Text>
-          <Text style={styles.price}>
-            ${(deal.price || 0).toLocaleString()}
-          </Text>
+          <Text style={styles.title}>{deal.title || deal.name || 'Deal'}</Text>
+          <Text style={styles.price}>{getDisplayPrice(deal)}</Text>
         </View>
 
         <View style={styles.sourceBadge}>
-          <Text style={styles.sourceText}>{deal.source || 'Unknown'}</Text>
+          <Text style={styles.sourceText}>
+            {isMockData ? '📊 Sample Data' : deal.source || 'Listing'}
+          </Text>
         </View>
 
+        {/* Location */}
+        {getLocation(deal) && (
+          <View style={styles.locationRow}>
+            <Icon name="location-outline" size={18} color="#666" />
+            <Text style={styles.locationText}>{getLocation(deal)}</Text>
+          </View>
+        )}
+
+        {/* BizBuySell Fields */}
         {isBizBuySell && (
           <>
-            <DetailRow label="Category" value={deal.category} />
+            <DetailRow label="Category" value={deal.category || deal.listing_category} />
             <DetailRow label="Location" value={deal.location} />
-            <DetailRow label="State" value={deal.state} />
+            <DetailRow label="State" value={deal.state || deal.state_code} />
             {deal.cashFlow ? (
               <DetailRow 
                 label="Cash Flow" 
@@ -87,30 +140,83 @@ export default function DealDetailScreen({ route, navigation }) {
                 value={`$${(deal.revenue || 0).toLocaleString()}`} 
               />
             ) : null}
-            {deal.broker && deal.broker !== 'N/A' ? (
-              <DetailRow label="Broker" value={deal.broker} />
+            {deal.ebitda ? (
+              <DetailRow 
+                label="EBITDA" 
+                value={`$${(deal.ebitda || 0).toLocaleString()}`} 
+              />
             ) : null}
-            {deal.brokerPhone ? (
-              <TouchableOpacity 
-                style={styles.phoneButton}
-                onPress={() => Linking.openURL(`tel:${deal.brokerPhone}`)}
-              >
-                <Icon name="call-outline" size={18} color="#2563eb" />
-                <Text style={styles.phoneText}>Call Broker</Text>
-              </TouchableOpacity>
+            {deal.yearEstablished ? (
+              <DetailRow label="Year Established" value={deal.yearEstablished} />
+            ) : null}
+            {deal.employees ? (
+              <DetailRow label="Employees" value={deal.employees} />
+            ) : null}
+            {deal.buildingSize ? (
+              <DetailRow label="Building Size" value={deal.buildingSize} />
             ) : null}
           </>
         )}
 
+        {/* LoopNet / Property Fields */}
         {isLoopNet && (
           <>
+            <DetailRow label="Property Type" value={getPropertyType(deal)} />
             <DetailRow label="Address" value={deal.address} />
-            <DetailRow label="Property Type" value={deal.propertyType} />
+            <DetailRow label="City" value={deal.city} />
+            <DetailRow label="State" value={deal.state} />
+            {deal.zip ? <DetailRow label="Zip Code" value={deal.zip} /> : null}
             {deal.size ? <DetailRow label="Size" value={deal.size} /> : null}
-            {deal.buildingClass ? <DetailRow label="Building Class" value={deal.buildingClass} /> : null}
+            {deal.totalSize ? <DetailRow label="Total Size" value={deal.totalSize} /> : null}
+            {deal.lotSize ? <DetailRow label="Lot Size" value={deal.lotSize} /> : null}
+            {deal.yearBuilt ? <DetailRow label="Year Built" value={deal.yearBuilt} /> : null}
+            {deal.capRate ? <DetailRow label="Cap Rate" value={deal.capRate} /> : null}
+            {deal.zoning ? <DetailRow label="Zoning" value={deal.zoning} /> : null}
+            
+            {/* Property Facts */}
+            {propertyFacts && (
+              <View style={styles.factsSection}>
+                <Text style={styles.sectionTitle}>Property Facts</Text>
+                {Object.entries(propertyFacts).map(([key, value]) => {
+                  if (value && value !== 'undefined' && value !== 'null') {
+                    const label = key.replace(/([A-Z])/g, ' $1').trim();
+                    return <DetailRow key={key} label={label} value={value} />;
+                  }
+                  return null;
+                })}
+              </View>
+            )}
           </>
         )}
 
+        {/* Broker Info */}
+        {(brokerName || brokerPhone || brokerEmail) && (
+          <View style={styles.brokerSection}>
+            <Text style={styles.sectionTitle}>📞 Broker Information</Text>
+            {brokerName && <DetailRow label="Name" value={brokerName} />}
+            {brokerCompany && <DetailRow label="Company" value={brokerCompany} />}
+            {brokerEmail && (
+              <TouchableOpacity 
+                style={styles.contactButton}
+                onPress={() => Linking.openURL(`mailto:${brokerEmail}`)}
+              >
+                <Icon name="mail-outline" size={18} color="#2563eb" />
+                <Text style={styles.contactText}>{brokerEmail}</Text>
+              </TouchableOpacity>
+            )}
+            {brokerPhone && (
+              <TouchableOpacity 
+                style={styles.contactButton}
+                onPress={() => Linking.openURL(`tel:${brokerPhone}`)}
+              >
+                <Icon name="call-outline" size={18} color="#2563eb" />
+                <Text style={styles.contactText}>{brokerPhone}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
+        {/* Description */}
         {(deal.description || deal.summary) && (
           <View style={styles.descriptionSection}>
             <Text style={styles.sectionTitle}>Description</Text>
@@ -120,6 +226,7 @@ export default function DealDetailScreen({ route, navigation }) {
           </View>
         )}
 
+        {/* Original Listing URL */}
         {deal.url ? (
           <TouchableOpacity
             style={styles.urlButton}
@@ -129,17 +236,33 @@ export default function DealDetailScreen({ route, navigation }) {
             <Text style={styles.urlButtonText}>View Original Listing</Text>
           </TouchableOpacity>
         ) : null}
+
+        {/* Chat Button */}
+        {deal.id && (
+          <TouchableOpacity
+            style={styles.chatButton}
+            onPress={() => navigation.navigate('Chat', { 
+              dealId: deal.id, 
+              dealTitle: deal.title || 'Deal' 
+            })}
+          >
+            <Icon name="chatbubble-outline" size={20} color="white" />
+            <Text style={styles.chatButtonText}>Chat about this deal</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </ScrollView>
   );
 }
 
 const DetailRow = ({ label, value }) => {
-  if (value === null || value === undefined || value === '') return null;
+  if (!label || value === null || value === undefined || value === '' || value === 'undefined' || value === 'null') {
+    return null;
+  }
   return (
     <View style={styles.detailRow}>
-      <Text style={styles.detailLabel}>{label || ''}</Text>
-      <Text style={styles.detailValue}>{String(value)}</Text>
+      <Text style={styles.detailLabel}>{label}</Text>
+      <Text style={styles.detailValue} numberOfLines={3}>{String(value)}</Text>
     </View>
   );
 };
@@ -177,6 +300,11 @@ const styles = StyleSheet.create({
     height: 250,
     backgroundColor: '#e0e0e0',
   },
+  placeholderImage: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f0f0f0',
+  },
   content: {
     padding: 16,
   },
@@ -204,12 +332,23 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 12,
     alignSelf: 'flex-start',
-    marginBottom: 16,
+    marginBottom: 8,
   },
   sourceText: {
     fontSize: 12,
     color: '#2563eb',
     fontWeight: '500',
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingVertical: 4,
+  },
+  locationText: {
+    fontSize: 14,
+    color: '#666',
+    marginLeft: 6,
   },
   detailRow: {
     flexDirection: 'row',
@@ -222,13 +361,25 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     fontWeight: '500',
+    flex: 1,
   },
   detailValue: {
     fontSize: 14,
     color: '#1a1a1a',
-    flex: 1,
+    flex: 2,
     textAlign: 'right',
     marginLeft: 12,
+  },
+  factsSection: {
+    marginTop: 16,
+  },
+  brokerSection: {
+    marginTop: 16,
+    backgroundColor: 'white',
+    padding: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
   },
   descriptionSection: {
     marginTop: 16,
@@ -245,19 +396,14 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginTop: 4,
   },
-  phoneButton: {
+  contactButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#e8f0fe',
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 12,
-    justifyContent: 'center',
+    paddingVertical: 8,
   },
-  phoneText: {
+  contactText: {
     color: '#2563eb',
     fontSize: 14,
-    fontWeight: '500',
     marginLeft: 8,
   },
   urlButton: {
@@ -268,9 +414,24 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 8,
     marginTop: 20,
-    marginBottom: 30,
   },
   urlButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  chatButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#10b981',
+    padding: 14,
+    borderRadius: 8,
+    marginTop: 12,
+    marginBottom: 30,
+  },
+  chatButtonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: '600',

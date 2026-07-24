@@ -3,275 +3,194 @@ import {
   View,
   Text,
   StyleSheet,
-  FlatList,
   TextInput,
   TouchableOpacity,
+  FlatList,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator,
-  Image,
-  Alert,
-  Modal,
   SafeAreaView,
   StatusBar,
+  Alert,
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
 import axios from 'axios';
+import { io } from 'socket.io-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Icon from 'react-native-vector-icons/Ionicons';
-import webSocketService from '../services/websocketService';
-import notificationService from '../services/notificationService';
+import { EXPO_PUBLIC_API_URL } from '@env';
 
-const API_URL = 'https://investbook-production.up.railway.app/api';
+const API_URL = EXPO_PUBLIC_API_URL;
 
-export default function ChatScreen({ navigation, route }) {
+export default function ChatScreen({ route, navigation }) {
   const { dealId, dealTitle } = route.params || {};
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
-  const [sending, setSending] = useState(false);
-  const [typingUsers, setTypingUsers] = useState([]);
-  const [showImagePicker, setShowImagePicker] = useState(false);
-  const [selectedImage, setSelectedImage] = useState(null);
+  const [socket, setSocket] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const flatListRef = useRef(null);
-  const typingTimeoutRef = useRef(null);
 
   useEffect(() => {
-    initializeChat();
-    return () => cleanup();
+    // If no deal ID is provided, show a message and go back
+    if (!dealId) {
+      Alert.alert(
+        'No Chat Selected',
+        'Please select a deal to chat about.',
+        [{ text: 'Go Back', onPress: () => navigation.goBack() }]
+      );
+      setLoading(false);
+      return;
+    }
+
+    console.log(`💬 Opening chat for deal: ${dealId} (${dealTitle || 'Untitled'})`);
+    
+    fetchMessages();
+    setupWebSocket();
+
+    return () => {
+      if (socket) {
+        socket.disconnect();
+        console.log('🔌 WebSocket disconnected');
+      }
+    };
   }, [dealId]);
 
-  const initializeChat = async () => {
-    await fetchMessages();
-    await connectWebSocket();
-  };
+  const setupWebSocket = async () => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const socketUrl = API_URL.replace('/api', '');
+      
+      console.log('🔗 Connecting to WebSocket at:', socketUrl);
+      
+      const newSocket = io(socketUrl, {
+        transports: ['websocket'],
+        query: { token },
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
+      });
 
-  const connectWebSocket = async () => {
-    const socket = await webSocketService.connect();
-    if (socket) {
-      setIsConnected(true);
-      webSocketService.joinDealChat(dealId);
-      webSocketService.on('new_message', handleNewMessage);
-      webSocketService.on('typing_start', handleTypingStart);
-      webSocketService.on('typing_end', handleTypingEnd);
-      webSocketService.on('message_read', handleMessageRead);
+      newSocket.on('connect', () => {
+        console.log('✅ WebSocket connected');
+        setIsConnected(true);
+        newSocket.emit('join_deal_chat', { deal_id: dealId });
+      });
+
+      newSocket.on('disconnect', () => {
+        console.log('❌ WebSocket disconnected');
+        setIsConnected(false);
+      });
+
+      newSocket.on('new_message', (data) => {
+        console.log('📩 New message received:', data);
+        if (data.deal_id === dealId) {
+          setMessages(prev => [...prev, data.message]);
+          setTimeout(() => {
+            flatListRef.current?.scrollToEnd({ animated: true });
+          }, 100);
+        }
+      });
+
+      newSocket.on('connect_error', (error) => {
+        console.log('⚠️ WebSocket connection error:', error.message);
+        setIsConnected(false);
+      });
+
+      setSocket(newSocket);
+    } catch (error) {
+      console.error('WebSocket setup error:', error);
+      setIsConnected(false);
     }
-  };
-
-  const cleanup = () => {
-    webSocketService.off('new_message', handleNewMessage);
-    webSocketService.off('typing_start', handleTypingStart);
-    webSocketService.off('typing_end', handleTypingEnd);
-    webSocketService.off('message_read', handleMessageRead);
-    webSocketService.leaveDealChat(dealId);
-    webSocketService.disconnect();
   };
 
   const fetchMessages = async () => {
     try {
       setLoading(true);
       const token = await AsyncStorage.getItem('token');
+      
+      if (!token) {
+        console.log('⚠️ No token found, skipping messages fetch');
+        setMessages([]);
+        setLoading(false);
+        return;
+      }
+
+      console.log(`📥 Fetching messages for deal ${dealId}...`);
       const response = await axios.get(`${API_URL}/deals/${dealId}/messages`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}` }
       });
+      
       setMessages(response.data || []);
+      console.log(`✅ Fetched ${response.data?.length || 0} messages`);
     } catch (error) {
-      console.error('Error fetching messages:', error);
-      setMessages([
-        {
-          id: 1,
-          userId: 'user1',
-          username: 'Investor1',
-          text: 'Interested in this deal. Can we discuss?',
-          timestamp: new Date(Date.now() - 3600000).toISOString(),
-          read: true,
-        },
-        {
-          id: 2,
-          userId: 'user2',
-          username: 'Seller',
-          text: 'Yes, happy to connect. Let me know your questions.',
-          timestamp: new Date(Date.now() - 1800000).toISOString(),
-          read: true,
-        },
-      ]);
+      console.log('⚠️ Error fetching messages:', error.message);
+      // If 404, it means no messages yet - that's fine
+      if (error.response?.status === 404) {
+        console.log('📭 No messages found for this deal yet');
+        setMessages([]);
+      } else if (error.response?.status === 403) {
+        console.log('🔒 Access denied to this deal chat');
+        Alert.alert(
+          'Access Denied',
+          "You don't have permission to view this chat.",
+          [{ text: 'Go Back', onPress: () => navigation.goBack() }]
+        );
+      } else {
+        // For other errors, show empty state
+        setMessages([]);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const handleNewMessage = (data) => {
-    if (data.dealId === dealId) {
-      setMessages(prev => [...prev, data.message]);
-      webSocketService.markAsRead(data.message.id, dealId);
-    }
-  };
-
-  const handleTypingStart = (data) => {
-    if (data.dealId === dealId && data.userId !== 'me') {
-      setTypingUsers(prev => [...prev, data.username]);
-    }
-  };
-
-  const handleTypingEnd = (data) => {
-    if (data.dealId === dealId) {
-      setTypingUsers(prev => prev.filter(name => name !== data.username));
-    }
-  };
-
-  const handleMessageRead = (data) => {
-    if (data.dealId === dealId) {
-      setMessages(prev =>
-        prev.map(msg =>
-          msg.id === data.messageId ? { ...msg, read: true } : msg
-        )
-      );
-    }
-  };
-
   const sendMessage = async () => {
-    if (!inputText.trim() && !selectedImage) return;
-
-    setSending(true);
-    const messageText = inputText.trim();
-    setInputText('');
+    if (!inputText.trim()) return;
+    if (!isConnected) {
+      Alert.alert('Not Connected', 'Please wait while we reconnect to the chat server.');
+      return;
+    }
 
     try {
       const token = await AsyncStorage.getItem('token');
+      const message = inputText.trim();
+
       const response = await axios.post(
         `${API_URL}/deals/${dealId}/messages`,
-        { text: messageText, image: selectedImage },
+        { message },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      const newMessage = {
-        id: response.data.id || Date.now(),
-        userId: 'me',
-        username: 'You',
-        text: messageText,
-        image: selectedImage,
-        timestamp: new Date().toISOString(),
-        read: false,
-      };
-      
-      setMessages(prev => [...prev, newMessage]);
-      flatListRef.current?.scrollToEnd({ animated: true });
-      setSelectedImage(null);
-      
-      // Notify via WebSocket
-      webSocketService.sendMessage(dealId, messageText, selectedImage);
+      if (response.data) {
+        setMessages(prev => [...prev, response.data]);
+        setInputText('');
+        setTimeout(() => {
+          flatListRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      }
     } catch (error) {
-      console.error('Error sending message:', error);
-      const newMessage = {
-        id: Date.now(),
-        userId: 'me',
-        username: 'You',
-        text: messageText,
-        image: selectedImage,
-        timestamp: new Date().toISOString(),
-        read: false,
-      };
-      setMessages(prev => [...prev, newMessage]);
-      setSelectedImage(null);
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const handleInputChange = (text) => {
-    setInputText(text);
-    if (text.trim()) {
-      webSocketService.startTyping(dealId);
-      clearTimeout(typingTimeoutRef.current);
-      typingTimeoutRef.current = setTimeout(() => {
-        webSocketService.stopTyping(dealId);
-      }, 2000);
-    } else {
-      webSocketService.stopTyping(dealId);
-    }
-  };
-
-  const pickImage = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission Denied', 'Please allow access to your photo library.');
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      quality: 0.8,
-      base64: true,
-    });
-
-    if (!result.canceled) {
-      setSelectedImage(result.assets[0].base64);
-      setShowImagePicker(false);
-    }
-  };
-
-  const takePhoto = async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission Denied', 'Please allow access to your camera.');
-      return;
-    }
-
-    const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
-      quality: 0.8,
-      base64: true,
-    });
-
-    if (!result.canceled) {
-      setSelectedImage(result.assets[0].base64);
-      setShowImagePicker(false);
+      console.log('⚠️ Error sending message:', error.message);
+      if (error.response?.status === 403) {
+        Alert.alert('Access Denied', "You don't have permission to send messages here.");
+      } else if (error.response?.status === 404) {
+        Alert.alert('Deal Not Found', 'This deal no longer exists.');
+        navigation.goBack();
+      } else {
+        Alert.alert('Error', 'Failed to send message. Please try again.');
+      }
     }
   };
 
   const renderMessage = ({ item }) => {
-    const isMe = item.userId === 'me' || item.username === 'You';
+    const isOwnMessage = item.user_id === route.params?.userId;
     return (
-      <View style={[styles.messageWrapper, isMe && styles.messageWrapperRight]}>
-        <View style={[styles.messageBubble, isMe && styles.messageBubbleRight]}>
-          <Text style={styles.messageUsername}>{item.username}</Text>
-          {item.image && (
-            <Image 
-              source={{ uri: `data:image/jpeg;base64,${item.image}` }}
-              style={styles.messageImage}
-            />
-          )}
-          {item.text ? (
-            <Text style={[styles.messageText, isMe && styles.messageTextRight]}>
-              {item.text}
-            </Text>
-          ) : null}
-          <View style={styles.messageFooter}>
-            <Text style={styles.messageTime}>
-              {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </Text>
-            {isMe && (
-              <Icon 
-                name={item.read ? 'checkmark-done' : 'checkmark'} 
-                size={14} 
-                color={item.read ? '#2563eb' : '#999'} 
-                style={styles.readReceipt}
-              />
-            )}
-          </View>
-        </View>
-      </View>
-    );
-  };
-
-  const renderTypingIndicator = () => {
-    if (typingUsers.length === 0) return null;
-    return (
-      <View style={styles.typingContainer}>
-        <Text style={styles.typingText}>
-          {typingUsers.join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...
+      <View style={[styles.messageContainer, isOwnMessage ? styles.ownMessage : styles.otherMessage]}>
+        {!isOwnMessage && (
+          <Text style={styles.messageUsername}>{item.username || 'User'}</Text>
+        )}
+        <Text style={[styles.messageText, isOwnMessage && styles.ownMessageText]}>
+          {item.message}
+        </Text>
+        <Text style={[styles.messageTime, isOwnMessage && styles.ownMessageTime]}>
+          {item.created_at ? new Date(item.created_at).toLocaleTimeString() : ''}
         </Text>
       </View>
     );
@@ -279,9 +198,8 @@ export default function ChatScreen({ navigation, route }) {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#2563eb" />
-        <Text style={styles.loadingText}>Loading chat...</Text>
+      <View style={styles.centerContainer}>
+        <Text style={styles.loadingText}>Loading messages...</Text>
       </View>
     );
   }
@@ -289,95 +207,58 @@ export default function ChatScreen({ navigation, route }) {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-      >
+      <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-            <Icon name="arrow-back" size={24} color="#1a1a1a" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>{dealTitle || 'Chat'}</Text>
-          <TouchableOpacity onPress={() => setShowImagePicker(true)} style={styles.headerButton}>
-            <Icon name="image-outline" size={24} color="#1a1a1a" />
-          </TouchableOpacity>
+          <Text style={styles.headerTitle}>
+            {dealTitle || 'Chat'}
+            {!isConnected && ' 🔴'}
+            {isConnected && ' 🟢'}
+          </Text>
+          <Text style={styles.headerSubtitle}>
+            {messages.length} {messages.length === 1 ? 'message' : 'messages'}
+          </Text>
         </View>
-
-        {selectedImage && (
-          <View style={styles.imagePreview}>
-            <Image 
-              source={{ uri: `data:image/jpeg;base64,${selectedImage}` }}
-              style={styles.previewImage}
-            />
-            <TouchableOpacity 
-              style={styles.removeImage}
-              onPress={() => setSelectedImage(null)}
-            >
-              <Icon name="close-circle" size={24} color="#ef4444" />
-            </TouchableOpacity>
-          </View>
-        )}
 
         <FlatList
           ref={flatListRef}
           data={messages}
           renderItem={renderMessage}
-          keyExtractor={(item) => item.id.toString()}
+          keyExtractor={(item, index) => item.id || `msg-${index}`}
           contentContainerStyle={styles.messagesList}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-          ListFooterComponent={renderTypingIndicator}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyEmoji}>💬</Text>
+              <Text style={styles.emptyText}>No messages yet</Text>
+              <Text style={styles.emptySubtext}>Start the conversation!</Text>
+            </View>
+          }
+          onContentSizeChange={() => {
+            flatListRef.current?.scrollToEnd({ animated: true });
+          }}
         />
 
-        <View style={styles.inputContainer}>
-          <TextInput
-            style={styles.input}
-            placeholder="Type a message..."
-            value={inputText}
-            onChangeText={handleInputChange}
-            multiline
-            editable={!sending}
-          />
-          <TouchableOpacity
-            style={[styles.sendButton, (!inputText.trim() && !selectedImage) && styles.sendButtonDisabled]}
-            onPress={sendMessage}
-            disabled={(!inputText.trim() && !selectedImage) || sending}
-          >
-            {sending ? (
-              <ActivityIndicator size="small" color="white" />
-            ) : (
-              <Icon name="send" size={20} color="white" />
-            )}
-          </TouchableOpacity>
-        </View>
-
-        <Modal
-          visible={showImagePicker}
-          transparent={true}
-          animationType="slide"
-          onRequestClose={() => setShowImagePicker(false)}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
         >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Add Image</Text>
-              <TouchableOpacity style={styles.modalButton} onPress={takePhoto}>
-                <Icon name="camera" size={24} color="#2563eb" />
-                <Text style={styles.modalButtonText}>Take Photo</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.modalButton} onPress={pickImage}>
-                <Icon name="images" size={24} color="#2563eb" />
-                <Text style={styles.modalButtonText}>Choose from Library</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.modalButton, styles.cancelButton]} 
-                onPress={() => setShowImagePicker(false)}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
+          <View style={styles.inputContainer}>
+            <TextInput
+              style={styles.input}
+              placeholder="Type a message..."
+              value={inputText}
+              onChangeText={setInputText}
+              multiline
+            />
+            <TouchableOpacity
+              style={[styles.sendButton, !inputText.trim() && styles.sendButtonDisabled]}
+              onPress={sendMessage}
+              disabled={!inputText.trim()}
+            >
+              <Text style={styles.sendButtonText}>📤</Text>
+            </TouchableOpacity>
           </View>
-        </Modal>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -391,188 +272,126 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
-  loadingContainer: {
+  centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
   loadingText: {
-    marginTop: 12,
     color: '#666',
     fontSize: 16,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
     backgroundColor: 'white',
+    padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
-  },
-  backButton: {
-    padding: 4,
+    borderBottomColor: '#e0e0e0',
   },
   headerTitle: {
-    flex: 1,
     fontSize: 18,
     fontWeight: '600',
     color: '#1a1a1a',
-    textAlign: 'center',
   },
-  headerButton: {
-    padding: 8,
+  headerSubtitle: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 2,
   },
   messagesList: {
     padding: 16,
-    paddingBottom: 8,
+    flexGrow: 1,
   },
-  messageWrapper: {
-    marginBottom: 12,
-    alignItems: 'flex-start',
-  },
-  messageWrapperRight: {
-    alignItems: 'flex-end',
-  },
-  messageBubble: {
+  messageContainer: {
     maxWidth: '80%',
-    backgroundColor: 'white',
-    borderRadius: 12,
     padding: 12,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  ownMessage: {
+    backgroundColor: '#2563eb',
+    alignSelf: 'flex-end',
+  },
+  otherMessage: {
+    backgroundColor: 'white',
+    alignSelf: 'flex-start',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
   },
-  messageBubbleRight: {
-    backgroundColor: '#2563eb',
-  },
   messageUsername: {
     fontSize: 12,
     fontWeight: '600',
     color: '#666',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   messageText: {
     fontSize: 15,
     color: '#1a1a1a',
-    lineHeight: 20,
   },
-  messageTextRight: {
+  ownMessageText: {
     color: 'white',
-  },
-  messageImage: {
-    width: 200,
-    height: 150,
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  messageFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    marginTop: 4,
   },
   messageTime: {
     fontSize: 10,
     color: '#999',
-    marginRight: 4,
+    marginTop: 4,
+    alignSelf: 'flex-end',
   },
-  readReceipt: {
-    marginLeft: 4,
+  ownMessageTime: {
+    color: 'rgba(255,255,255,0.7)',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 60,
+  },
+  emptyEmoji: {
+    fontSize: 50,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#666',
+    marginTop: 8,
+  },
+  emptySubtext: {
+    fontSize: 13,
+    color: '#999',
+    marginTop: 4,
   },
   inputContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    padding: 12,
     backgroundColor: 'white',
     borderTopWidth: 1,
-    borderTopColor: '#e5e5e5',
+    borderTopColor: '#e0e0e0',
+    alignItems: 'flex-end',
   },
   input: {
     flex: 1,
-    maxHeight: 100,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
     backgroundColor: '#f5f5f5',
-    fontSize: 16,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    maxHeight: 100,
+    fontSize: 15,
   },
   sendButton: {
+    marginLeft: 8,
     backgroundColor: '#2563eb',
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    borderRadius: 25,
+    width: 44,
+    height: 44,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 8,
   },
   sendButtonDisabled: {
     backgroundColor: '#ccc',
   },
-  typingContainer: {
-    padding: 8,
-  },
-  typingText: {
-    fontSize: 12,
-    color: '#666',
-    fontStyle: 'italic',
-  },
-  imagePreview: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 8,
-    backgroundColor: '#f0f0f0',
-  },
-  previewImage: {
-    width: 80,
-    height: 60,
-    borderRadius: 8,
-  },
-  removeImage: {
-    marginLeft: 8,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 24,
-    width: '80%',
-    maxWidth: 400,
-  },
-  modalTitle: {
+  sendButtonText: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  modalButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  modalButtonText: {
-    fontSize: 16,
-    color: '#1a1a1a',
-    marginLeft: 12,
-  },
-  cancelButton: {
-    borderBottomWidth: 0,
-    justifyContent: 'center',
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    color: '#ef4444',
-    fontWeight: '500',
+    color: 'white',
   },
 });
