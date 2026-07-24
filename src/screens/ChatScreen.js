@@ -147,8 +147,21 @@ export default function ChatScreen({ route, navigation }) {
         Alert.alert(
           'Login Required',
           'Please login to access chat.',
-          [{ text: 'Login', onPress: () => navigation.navigate('Login') }]
+          [
+            { 
+              text: 'Login', 
+              onPress: () => {
+                // Use navigation.reset to properly navigate to Login
+                navigation.reset({
+                  index: 0,
+                  routes: [{ name: 'Login' }],
+                });
+              }
+            },
+            { text: 'Cancel', style: 'cancel' }
+          ]
         );
+        return;
       } else {
         setMessages([]);
       }
@@ -253,7 +266,25 @@ export default function ChatScreen({ route, navigation }) {
       if (error.response?.status === 403) {
         Alert.alert('Access Denied', "You don't have permission to send messages here.");
       } else if (error.response?.status === 401) {
-        Alert.alert('Login Required', 'Please login to send messages.');
+        console.log('🔑 Authentication required for chat');
+        Alert.alert(
+          'Login Required',
+          'Please login to send messages.',
+          [
+            { 
+              text: 'Login', 
+              onPress: () => {
+                // Use navigation.reset to properly navigate to Login
+                navigation.reset({
+                  index: 0,
+                  routes: [{ name: 'Login' }],
+                });
+              }
+            },
+            { text: 'Cancel', style: 'cancel' }
+          ]
+        );
+        return;
       } else {
         Alert.alert('Error', 'Failed to send message. Please try again.');
       }

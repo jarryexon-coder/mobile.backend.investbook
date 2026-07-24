@@ -19,6 +19,7 @@ import ProfileScreen from './src/screens/ProfileScreen';
 import DealDetailScreen from './src/screens/DealDetailScreen';
 import TermsScreen from './src/screens/TermsScreen';
 import ChatScreen from './src/screens/ChatScreen';
+import CreateDealScreen from './src/screens/CreateDealScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -99,10 +100,10 @@ function AppNavigator() {
     checkTerms();
   }, []);
 
-useEffect(() => {
-  // Check actor health on app start
-  initializeActorHealth();
-}, []);
+  useEffect(() => {
+    // Check actor health on app start
+    initializeActorHealth();
+  }, []);
 
   const checkTerms = async () => {
     try {
@@ -160,6 +161,30 @@ useEffect(() => {
               },
               headerTintColor: '#fff',
               title: 'Deal Details'
+            }}
+          />
+          <Stack.Screen 
+            name="Chat" 
+            component={ChatScreen} 
+            options={{ 
+              headerShown: true,
+              headerStyle: {
+                backgroundColor: '#2563eb',
+              },
+              headerTintColor: '#fff',
+              title: 'Chat'
+            }}
+          />
+          <Stack.Screen 
+            name="CreateDeal" 
+            component={CreateDealScreen} 
+            options={{ 
+              headerShown: true,
+              headerStyle: {
+                backgroundColor: '#2563eb',
+              },
+              headerTintColor: '#fff',
+              title: 'Create Deal'
             }}
           />
         </>
