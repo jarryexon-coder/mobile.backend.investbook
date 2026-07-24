@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "InvestBook",
-    "slug": "investbook",
+    "name": "InvestBook Pro",
+    "slug": "investbook-pro",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -16,13 +16,13 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.jerryjiya.investbook",
+      "bundleIdentifier": "com.jerryjiya.investbookpro",
       "buildNumber": "1.0.0",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSLocationWhenInUseUsageDescription": "InvestBook uses your location to show nearby investment opportunities.",
-        "NSPhotoLibraryUsageDescription": "InvestBook uses your photo library to upload property images.",
-        "NSCameraUsageDescription": "InvestBook uses your camera to take photos of properties."
+        "NSLocationWhenInUseUsageDescription": "InvestBook Pro uses your location to show nearby investment opportunities.",
+        "NSPhotoLibraryUsageDescription": "InvestBook Pro uses your photo library to upload property images.",
+        "NSCameraUsageDescription": "InvestBook Pro uses your camera to take photos of properties."
       },
       "config": {
         "usesNonExemptEncryption": false
@@ -35,7 +35,7 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "backgroundColor": "#2563eb"
       },
-      "package": "com.jerryjiya.investbook",
+      "package": "com.jerryjiya.investbookpro",
       "versionCode": 1,
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
@@ -48,8 +48,8 @@
     },
     "web": {
       "favicon": "./assets/favicon.png",
-      "name": "InvestBook",
-      "shortName": "InvestBook",
+      "name": "InvestBook Pro",
+      "shortName": "InvestBook Pro",
       "description": "Discover and invest in real estate and business opportunities."
     },
     "extra": {
