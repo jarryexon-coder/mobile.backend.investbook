@@ -126,9 +126,37 @@ export default function OpportunitiesScreen({ navigation }) {
 
   const filteredItems = getFilteredItems();
 
+  // Smart detection: Determine listing type
+  const getListingType = (item) => {
+    // Check if it's a property (has propertyType, address, lotSize, buildingSize, or from LoopNet)
+    if (item.propertyType || item.address || item.lotSize || item.buildingSize || 
+        item.size || item.priceDisplay?.includes('M') && !item.category) {
+      return { type: 'Property', emoji: '🏢' };
+    }
+    // Check if it's a business (has category, cashFlow, revenue, or from BizBuySell)
+    if (item.category || item.cashFlow || item.revenue || item.broker) {
+      return { type: 'Business', emoji: '💼' };
+    }
+    // Default fallback
+    return { type: 'Opportunity', emoji: '📋' };
+  };
+
+  // Get subtype for display
+  const getSubtype = (item) => {
+    if (item.propertyType) return item.propertyType;
+    if (item.category) return item.category;
+    if (item.propertySubtype) return item.propertySubtype;
+    return null;
+  };
+
   const renderItem = ({ item }) => {
     // Use priceDisplay if available, otherwise format the price
     const displayPrice = item.priceDisplay || formatPrice(item.price);
+    
+    // Get listing type
+    const listingInfo = getListingType(item);
+    const subtype = getSubtype(item);
+    const title = item.title || item.name || `${listingInfo.type} for Sale`;
     
     return (
       <View style={styles.card}>
@@ -138,23 +166,31 @@ export default function OpportunitiesScreen({ navigation }) {
         >
           <View style={styles.cardHeader}>
             <Text style={styles.cardTitle} numberOfLines={2}>
-              {item.title || 'Opportunity'}
+              {title}
             </Text>
             <Text style={styles.cardPrice}>{displayPrice}</Text>
           </View>
-          <Text style={styles.cardSubtitle}>
-            {item.category || item.propertyType || 'Deal'}
-          </Text>
+          
           <View style={styles.cardDetails}>
-            <Text style={styles.cardLocation}>
-              📍 {item.location || item.address || item.city || 'N/A'}
-            </Text>
+            <View style={styles.typeContainer}>
+              <Text style={styles.cardType}>
+                {listingInfo.emoji} {listingInfo.type}
+              </Text>
+              {subtype && (
+                <Text style={styles.cardSubtype}> • {subtype}</Text>
+              )}
+            </View>
             <View style={styles.sourceBadge}>
               <Text style={styles.sourceText}>
                 {item.source || 'Listing'}
               </Text>
             </View>
           </View>
+          
+          <Text style={styles.cardLocation}>
+            📍 {item.location || item.address || item.city || 'N/A'}
+          </Text>
+          
           {item.source === 'Mock Data' && (
             <View style={styles.mockBadge}>
               <Text style={styles.mockBadgeText}>📊 Sample Data</Text>
@@ -356,7 +392,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 4,
+    marginBottom: 6,
   },
   cardTitle: {
     fontSize: 15,
@@ -370,19 +406,28 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#2563eb',
   },
-  cardSubtitle: {
-    fontSize: 13,
-    color: '#666',
-    marginBottom: 4,
-  },
   cardDetails: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 4,
+  },
+  typeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cardType: {
+    fontSize: 13,
+    color: '#666',
+  },
+  cardSubtype: {
+    fontSize: 13,
+    color: '#888',
   },
   cardLocation: {
     fontSize: 12,
     color: '#999',
+    marginTop: 2,
   },
   sourceBadge: {
     backgroundColor: '#f0f0f0',

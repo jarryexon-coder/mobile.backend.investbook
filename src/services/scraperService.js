@@ -467,6 +467,26 @@ export const fetchAllOpportunities = async (searchParams = {}) => {
     return results;
 };
 
+// Add this to scraperService.js
+export const fetchFromApifyDataset = async (datasetId) => {
+    try {
+        const response = await axios.get(
+            `https://api.apify.com/v2/datasets/${datasetId}/items`,
+            {
+                params: {
+                    token: APIFY_API_TOKEN,
+                    format: 'json',
+                    limit: 1000
+                }
+            }
+        );
+        return response.data;
+    } catch (error) {
+        console.error('Error fetching from Apify dataset:', error);
+        return null;
+    }
+};
+
 // Export cache functions
 export const cacheOpportunities = async (data) => {
     try {
