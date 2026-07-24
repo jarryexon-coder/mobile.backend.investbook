@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "InvestBook Pro",
-    "slug": "investbook-pro",
+    "slug": "mobile-fixed",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
