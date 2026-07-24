@@ -1,21 +1,22 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { searchByLocation } from './rapidApiService';
-import { EXPO_PUBLIC_APIFY_API_TOKEN, EXPO_PUBLIC_RAPIDAPI_KEY } from '@env';
+import { EXPO_PUBLIC_APIFY_API_TOKEN, EXPO_PUBLIC_RAPIDAPI_KEY, EXPO_PUBLIC_API_URL } from '@env';
 import { generateMockBusinesses, generateMockRealEstate } from './mockDataGenerator';
 
 // Use environment variables
 const APIFY_API_TOKEN = EXPO_PUBLIC_APIFY_API_TOKEN;
 const RAPIDAPI_KEY = EXPO_PUBLIC_RAPIDAPI_KEY;
+const API_URL = EXPO_PUBLIC_API_URL;
 
 console.log('🔑 APIFY Token loaded:', APIFY_API_TOKEN ? '✅ Yes' : '❌ No');
+console.log('🔑 API_URL:', API_URL);
 
 // ✅ Primary: memo23~loopnet-scraper-ppe - 1000+ results (NEEDS SUBSCRIPTION)
-// ⚠️ Note: These actors require subscription to work via API
 const BIZBUYSELL_ACTORS = [
-    'memo23~loopnet-scraper-ppe',        // ⭐ BEST - 1000+ properties
-    'shahidirfan~bizbuysell-scraper',     // Backup for businesses
-    'fatihtahta~bizbuysell-scraper',      // Second backup
+    'memo23~loopnet-scraper-ppe',
+    'shahidirfan~bizbuysell-scraper',
+    'fatihtahta~bizbuysell-scraper',
 ];
 
 // Cache configuration
@@ -89,7 +90,6 @@ const callApifyActor = async (actorId, input, retries = 2) => {
             const errorMsg = error.response?.data || error.message;
             console.error(`❌ Attempt ${attempt + 1} failed:`, errorMsg);
             
-            // If it's a subscription error, don't retry
             if (errorMsg?.error?.message?.includes('User was not found') || 
                 errorMsg?.includes('User was not found')) {
                 console.log(`⚠️ Actor ${actorId} requires subscription, skipping...`);
@@ -214,8 +214,24 @@ const mapBizBuySellData = (item) => {
     };
 };
 
-// Get cached data
-const getCachedData = async () => {
+// 🔥 NEW: Get data from backend cache
+const getBackendCache = async () => {
+    try {
+        console.log('🌐 Checking backend cache...');
+        const response = await axios.get(`${API_URL}/cache/businesses`);
+        if (response.data && response.data.status === 'success' && response.data.data) {
+            console.log(`✅ Backend cache has ${response.data.count} items`);
+            return response.data.data;
+        }
+        return null;
+    } catch (error) {
+        console.log('⚠️ Backend cache not available:', error.message);
+        return null;
+    }
+};
+
+// Get AsyncStorage cached data
+const getAsyncCache = async () => {
     try {
         const cached = await AsyncStorage.getItem('cachedBusinessData');
         const cachedTime = await AsyncStorage.getItem('cachedBusinessTime');
@@ -224,43 +240,54 @@ const getCachedData = async () => {
             const age = Date.now() - parseInt(cachedTime);
             if (age < CACHE_DURATION) {
                 const parsed = JSON.parse(cached);
-                console.log(`📦 Cache hit: ${parsed.length} items (${Math.round(age/1000/60)} min old)`);
+                console.log(`📦 Async cache hit: ${parsed.length} items (${Math.round(age/1000/60)} min old)`);
                 return parsed;
             } else {
-                console.log(`⏰ Cache expired (${Math.round(age/1000/60)} min old)`);
+                console.log(`⏰ Async cache expired (${Math.round(age/1000/60)} min old)`);
             }
         }
         return null;
     } catch (error) {
-        console.error('Cache read error:', error);
+        console.error('Async cache read error:', error);
         return null;
     }
 };
 
-// Save to cache
-const saveToCache = async (data) => {
+// Save to AsyncStorage cache
+const saveToAsyncCache = async (data) => {
     try {
         if (data && data.length > 0) {
             await AsyncStorage.setItem('cachedBusinessData', JSON.stringify(data));
             await AsyncStorage.setItem('cachedBusinessTime', Date.now().toString());
-            console.log(`💾 Cached ${data.length} items`);
+            console.log(`💾 Saved ${data.length} items to Async cache`);
         }
     } catch (error) {
-        console.error('Cache save error:', error);
+        console.error('Async cache save error:', error);
     }
 };
 
-// Main scraper function - TRY CACHE FIRST
+// Main scraper function - CHECK BACKEND CACHE FIRST
 export const scrapeBizBuySell = async (keyword = '', location = '', state = '', limit = 50) => {
-    // First check cache - this is fast and works even without subscription
-    console.log('🔍 Checking cache first...');
-    const cached = await getCachedData();
-    if (cached && cached.length > 0) {
-        console.log(`📦 Using cached data: ${cached.length} results`);
-        return cached.slice(0, limit);
+    console.log('🔍 Checking backend cache first...');
+    
+    // 1️⃣ FIRST: Check backend cache (has 1063 listings!)
+    const backendData = await getBackendCache();
+    if (backendData && backendData.length > 0) {
+        console.log(`📦 Using backend cache: ${backendData.length} results`);
+        // Also save to Async cache for offline use
+        await saveToAsyncCache(backendData);
+        return backendData.slice(0, limit);
     }
     
-    // If no cache, try actors (may require subscription)
+    // 2️⃣ SECOND: Check AsyncStorage cache
+    console.log('🔄 Backend cache empty, checking AsyncStorage...');
+    const asyncData = await getAsyncCache();
+    if (asyncData && asyncData.length > 0) {
+        console.log(`📦 Using Async cache: ${asyncData.length} results`);
+        return asyncData.slice(0, limit);
+    }
+    
+    // 3️⃣ THIRD: Try actors
     console.log('🔄 No cache found, trying actors...');
     
     const baseUrl = 'https://www.bizbuysell.com/businesses-for-sale/';
@@ -304,7 +331,7 @@ export const scrapeBizBuySell = async (keyword = '', location = '', state = '', 
                 
                 if (allResults.length >= limit) {
                     console.log(`✅ Got ${allResults.length} results`);
-                    await saveToCache(allResults);
+                    await saveToAsyncCache(allResults);
                     return allResults.slice(0, limit);
                 }
             }
@@ -313,17 +340,10 @@ export const scrapeBizBuySell = async (keyword = '', location = '', state = '', 
         }
     }
     
-    // If actors returned some results
-    if (allResults.length > 0) {
-        console.log(`✅ Got ${allResults.length} results from actors`);
-        await saveToCache(allResults);
-        return allResults;
-    }
-    
-    // If all else fails, use mock data
+    // 4️⃣ LAST: Use mock data
     console.log('⚠️ No data available, generating mock data...');
     const mockData = generateMockBusinesses(location || 'United States', limit);
-    await saveToCache(mockData);
+    await saveToAsyncCache(mockData);
     return mockData;
 };
 
@@ -389,7 +409,7 @@ export const fetchAllOpportunities = async (searchParams = {}) => {
         results.errors.push({ source: 'Business', error: error.message });
     }
 
-    // Fetch properties
+    // Fetch properties (with fallback)
     try {
         let searchLocation = location || city || state || '';
         
@@ -465,26 +485,6 @@ export const fetchAllOpportunities = async (searchParams = {}) => {
     }
 
     return results;
-};
-
-// Add this to scraperService.js
-export const fetchFromApifyDataset = async (datasetId) => {
-    try {
-        const response = await axios.get(
-            `https://api.apify.com/v2/datasets/${datasetId}/items`,
-            {
-                params: {
-                    token: APIFY_API_TOKEN,
-                    format: 'json',
-                    limit: 1000
-                }
-            }
-        );
-        return response.data;
-    } catch (error) {
-        console.error('Error fetching from Apify dataset:', error);
-        return null;
-    }
 };
 
 // Export cache functions
