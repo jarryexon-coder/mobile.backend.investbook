@@ -17,8 +17,23 @@ import { fetchAllOpportunities } from '../services/scraperService';
 
 // Format price with full numbers and commas (no abbreviations)
 const formatPrice = (price) => {
-  if (!price || price === 0) return 'N/A';
+  if (!price || price === 0 || price === '0' || price === 'N/A') return 'Price Not Disclosed';
   
+  // If price is a string, try to parse it
+  if (typeof price === 'string') {
+    // Remove currency symbols and commas
+    const cleaned = price.replace(/[$€£,]/g, '').trim();
+    const num = parseFloat(cleaned);
+    if (!isNaN(num) && num > 0) {
+      return `$${num.toLocaleString('en-US', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      })}`;
+    }
+    return price;
+  }
+  
+  // If price is a number, format it
   if (typeof price === 'number') {
     return `$${price.toLocaleString('en-US', {
       minimumFractionDigits: 0,
@@ -26,22 +41,17 @@ const formatPrice = (price) => {
     })}`;
   }
   
-  const numPrice = parseFloat(String(price).replace(/[$,]/g, ''));
-  if (isNaN(numPrice) || numPrice === 0) return 'N/A';
-  
-  return `$${numPrice.toLocaleString('en-US', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  })}`;
+  return 'Price Not Disclosed';
 };
 
 // Helper to get display title
 const getDisplayTitle = (item) => {
   // Try all possible title fields
-  if (item.title) return item.title;
-  if (item.name) return item.name;
-  if (item.listingName) return item.listingName;
-  if (item.address) {
+  if (item.title && item.title !== 'Property Listing' && !item.title.includes('undefined')) 
+    return item.title;
+  if (item.name && item.name !== 'undefined') return item.name;
+  if (item.listingName && item.listingName !== 'undefined') return item.listingName;
+  if (item.address && item.address !== 'undefined') {
     // If address is available, use it as title
     const addr = item.address;
     if (addr.includes(',')) {
@@ -49,15 +59,18 @@ const getDisplayTitle = (item) => {
     }
     return addr;
   }
-  if (item.listing_title) return item.listing_title;
-  if (item.business_name) return item.business_name;
+  if (item.listing_title && item.listing_title !== 'undefined') return item.listing_title;
+  if (item.business_name && item.business_name !== 'undefined') return item.business_name;
   
   // For LoopNet data, try to construct a title from available fields
-  if (item.propertyType) {
+  if (item.propertyType && item.propertyType !== 'undefined') {
     return `${item.propertyType} Property`;
   }
-  if (item.category || item.listing_category) {
-    return `${item.category || item.listing_category} Business`;
+  if (item.category && item.category !== 'undefined') {
+    return `${item.category} Business`;
+  }
+  if (item.city && item.state) {
+    return `Property in ${item.city}, ${item.state}`;
   }
   
   return 'Property Listing';
@@ -66,17 +79,12 @@ const getDisplayTitle = (item) => {
 // Helper to get display location
 const getDisplayLocation = (item) => {
   // Try all possible location fields
-  if (item.location) return item.location;
-  if (item.address) return item.address;
+  if (item.location && item.location !== 'undefined') return item.location;
+  if (item.address && item.address !== 'undefined') return item.address;
   if (item.city && item.state) return `${item.city}, ${item.state}`;
-  if (item.city) return item.city;
-  if (item.state) return item.state;
-  if (item.country) return item.country;
-  
-  // For LoopNet data
-  if (item.city && item.country) return `${item.city}, ${item.country}`;
-  if (item.region) return item.region;
-  if (item.zip) return `Zip: ${item.zip}`;
+  if (item.city && item.city !== 'undefined') return item.city;
+  if (item.state && item.state !== 'undefined') return item.state;
+  if (item.country && item.country !== 'undefined') return item.country;
   
   return 'Location N/A';
 };

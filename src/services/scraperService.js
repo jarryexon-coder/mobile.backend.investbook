@@ -147,6 +147,98 @@ const getCleanSource = (source) => {
     return source;
 };
 
+// Add this function to properly map cached data
+const mapCachedData = (item) => {
+    // Try to get a valid ID
+    const id = item.id || item.propertyId || item.listing_id || `item-${Math.random()}`;
+    
+    // Try to get price - LoopNet data often has price in multiple fields
+    let price = 0;
+    if (item.priceNumeric) price = parseFloat(item.priceNumeric);
+    else if (item.price) {
+        if (typeof item.price === 'number') price = item.price;
+        else price = parsePrice(item.price);
+    }
+    else if (item.formattedPrice) price = parsePrice(item.formattedPrice);
+    else if (item.priceText) price = parsePrice(item.priceText);
+    else if (item.askingPrice) price = parsePrice(item.askingPrice);
+    
+    // Try to get title - LoopNet data often has multiple title fields
+    const title = item.title || 
+                  item.name || 
+                  item.listingName || 
+                  item.listing_title || 
+                  item.business_name ||
+                  (item.address ? `Property at ${item.address}` : 'Property Listing');
+    
+    // Try to get location
+    const location = item.location || 
+                     (item.city && item.state ? `${item.city}, ${item.state}` : '') ||
+                     (item.city && item.country ? `${item.city}, ${item.country}` : '') ||
+                     item.city || item.state || item.country || 'Location N/A';
+    
+    // Try to get address
+    const address = item.address || item.location || '';
+    
+    // Try to get image
+    const imageUrl = item.imageUrl || 
+                     item.photo || 
+                     (item.images && item.images.length > 0 ? item.images[0] : null) ||
+                     (item.image_urls && item.image_urls.length > 0 ? item.image_urls[0] : null);
+    
+    // Determine if it's a business or property
+    const isBusiness = item.category || 
+                      item.cashFlow || 
+                      item.revenue || 
+                      item.ebitda || 
+                      item.listing_category ||
+                      (item.title && (item.title.includes('Business') || item.title.includes('Company')));
+    
+    const isProperty = item.propertyType || 
+                       item.address || 
+                       item.size || 
+                       item.lotSize || 
+                       item.buildingSize ||
+                       (item.title && (item.title.includes('Building') || item.title.includes('Property') || 
+                       item.title.includes('Land') || item.title.includes('Warehouse')));
+    
+    return {
+        id: id,
+        propertyId: item.propertyId,
+        listing_id: item.listing_id,
+        title: title,
+        name: item.name || title,
+        price: price,
+        priceDisplay: price ? formatPrice(price) : 'Price Not Disclosed',
+        priceNumeric: price,
+        location: location,
+        address: address,
+        city: item.city || '',
+        state: item.state || '',
+        country: item.country || '',
+        propertyType: item.propertyType || item.propertySubtype || '',
+        propertySubtype: item.propertySubtype || '',
+        category: item.category || item.listing_category || '',
+        source: item.source || 'Property Listing',
+        url: item.listingUrl || item.url || '',
+        description: item.description || item.summary || '',
+        imageUrl: imageUrl,
+        broker: item.brokerName || item.broker || '',
+        brokerName: item.brokerName || item.broker || '',
+        brokerCompany: item.brokerCompany || item.broker_company || '',
+        brokerPhone: item.brokerPhone || item.contact_phone || '',
+        brokerEmail: item.brokerEmail || '',
+        size: item.size || item.totalSize || item.buildingSize || '',
+        totalSize: item.totalSize || item.buildingSize || '',
+        lotSize: item.lotSize || '',
+        yearBuilt: item.yearBuilt || '',
+        cashFlow: item.cashFlow || 0,
+        revenue: item.revenue || 0,
+        details: item,
+        hasValidId: true
+    };
+};
+
 // Map LoopNet data from memo23
 const mapLoopNetData = (item) => {
     let price = 0;
