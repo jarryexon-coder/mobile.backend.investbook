@@ -194,19 +194,19 @@ export default function OpportunitiesScreen({ navigation }) {
     const min = parseFloat(minPrice);
     const max = parseFloat(maxPrice);
     if (!isNaN(min) && min > 0) {
-      filtered = filtered.filter(item => (item.price || 0) >= min);
+      filtered = filtered.filter(item => (item.price || item.priceNumeric || 0) >= min);
     }
     if (!isNaN(max) && max > 0) {
-      filtered = filtered.filter(item => (item.price || 0) <= max);
+      filtered = filtered.filter(item => (item.price || item.priceNumeric || 0) <= max);
     }
     
     // Sort
     switch (sortBy) {
       case 'price_asc':
-        filtered.sort((a, b) => (a.price || 0) - (b.price || 0));
+        filtered.sort((a, b) => (a.price || a.priceNumeric || 0) - (b.price || b.priceNumeric || 0));
         break;
       case 'price_desc':
-        filtered.sort((a, b) => (b.price || 0) - (a.price || 0));
+        filtered.sort((a, b) => (b.price || b.priceNumeric || 0) - (a.price || a.priceNumeric || 0));
         break;
       case 'date_desc':
         filtered.sort((a, b) => {
@@ -269,7 +269,17 @@ export default function OpportunitiesScreen({ navigation }) {
   };
 
   const renderItem = ({ item }) => {
-    const displayPrice = item.priceDisplay || formatPrice(item.price);
+    // Try to get the best price display
+    let displayPrice = item.priceDisplay || formatPrice(item.price);
+    
+    // If still no price, check for priceText or other fields
+    if (!displayPrice || displayPrice === 'N/A' || displayPrice === 'Price Not Disclosed') {
+      if (item.priceText) displayPrice = item.priceText;
+      else if (item.formattedPrice) displayPrice = item.formattedPrice;
+      else if (item.priceNumeric) displayPrice = `$${item.priceNumeric.toLocaleString()}`;
+      else displayPrice = 'Price Not Disclosed';
+    }
+    
     const listingInfo = getListingType(item);
     const subtype = getSubtype(item);
     const title = getDisplayTitle(item);

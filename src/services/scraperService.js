@@ -151,28 +151,65 @@ const getCleanSource = (source) => {
 const mapCachedData = (item) => {
     // IMPROVED PRICE EXTRACTION
     let price = 0;
-    if (item.priceNumeric) price = parseFloat(item.priceNumeric);
-    else if (item.price) {
-        if (typeof item.price === 'number') price = item.price;
-        else if (typeof item.price === 'string') {
-            // Try to extract number from string like "$1,200,000"
+    let priceDisplay = 'Price Not Disclosed';
+    
+    // Check all possible price fields
+    if (item.priceNumeric && item.priceNumeric !== null) {
+        price = parseFloat(item.priceNumeric);
+        priceDisplay = `$${price.toLocaleString()}`;
+    } else if (item.price) {
+        if (typeof item.price === 'number') {
+            price = item.price;
+            priceDisplay = `$${price.toLocaleString()}`;
+        } else if (typeof item.price === 'string') {
+            // Try to extract number from string
             const cleaned = item.price.replace(/[$€£,]/g, '').trim();
             const num = parseFloat(cleaned);
-            if (!isNaN(num)) price = num;
-            // Check for "Upon Request" or "Price Not Disclosed"
-            else if (item.price.includes('Request') || item.price.includes('Disclosed')) {
-                price = 0;
+            if (!isNaN(num) && num > 0) {
+                price = num;
+                priceDisplay = `$${num.toLocaleString()}`;
+            } else if (item.price.includes('Request') || item.price.includes('Disclosed')) {
+                priceDisplay = item.price;
+            } else {
+                priceDisplay = item.price;
             }
         }
-    }
-    else if (item.formattedPrice) price = parsePrice(item.formattedPrice);
-    else if (item.priceText) price = parsePrice(item.priceText);
-    
-    // If price is 0 or invalid, check for priceDisplay or priceText
-    if (price === 0 && item.priceText && item.priceText !== 'Price Not Disclosed') {
+    } else if (item.formattedPrice) {
+        const cleaned = item.formattedPrice.replace(/[$€£,]/g, '').trim();
+        const num = parseFloat(cleaned);
+        if (!isNaN(num) && num > 0) {
+            price = num;
+            priceDisplay = item.formattedPrice;
+        }
+    } else if (item.priceText) {
         const cleaned = item.priceText.replace(/[$€£,]/g, '').trim();
         const num = parseFloat(cleaned);
-        if (!isNaN(num)) price = num;
+        if (!isNaN(num) && num > 0) {
+            price = num;
+            priceDisplay = item.priceText;
+        } else {
+            priceDisplay = item.priceText;
+        }
+    } else if (item.askingPrice) {
+        const cleaned = item.askingPrice.replace(/[$€£,]/g, '').trim();
+        const num = parseFloat(cleaned);
+        if (!isNaN(num) && num > 0) {
+            price = num;
+            priceDisplay = item.askingPrice;
+        }
+    }
+    
+    // If we still don't have a price, check propertyFacts
+    if (price === 0 && item.propertyFacts) {
+        const facts = item.propertyFacts;
+        if (facts.Price) {
+            const cleaned = facts.Price.replace(/[$€£,]/g, '').trim();
+            const num = parseFloat(cleaned);
+            if (!isNaN(num) && num > 0) {
+                price = num;
+                priceDisplay = facts.Price;
+            }
+        }
     }
     
     const location = [item.city, item.state, item.country].filter(Boolean).join(', ');
@@ -181,7 +218,8 @@ const mapCachedData = (item) => {
         id: item.propertyId || item.id || `prop-${Math.random()}`,
         title: item.title || item.name || item.address || 'Property for Sale',
         price: price,
-        priceDisplay: price > 0 ? formatPrice(price) : 'Price Not Disclosed',
+        priceDisplay: priceDisplay,
+        priceNumeric: price,
         address: item.address || '',
         city: item.city || '',
         state: item.state || '',
@@ -221,6 +259,7 @@ const mapLoopNetData = (item) => {
         title: item.title || item.name || item.address || 'Property for Sale',
         price: price,
         priceDisplay: price > 0 ? formatPrice(price) : 'Price Not Disclosed',
+        priceNumeric: price,
         address: item.address || '',
         city: item.city || '',
         state: item.state || '',
@@ -257,6 +296,7 @@ const mapBizBuySellData = (item) => {
         title: item.title || item.name || 'Business for Sale',
         price: parsePrice(price),
         priceDisplay: parsePrice(price) > 0 ? formatPrice(parsePrice(price)) : 'Price Not Disclosed',
+        priceNumeric: parsePrice(price),
         revenue: parsePrice(revenue),
         cashFlow: parsePrice(cashFlow),
         location: item.location || item.city || `${item.city || ''}, ${item.state || ''}` || 'N/A',
@@ -561,6 +601,7 @@ export const fetchAllOpportunities = async (searchParams = {}) => {
                         title: item.address || 'Property for Sale',
                         price: parsePrice(item.price),
                         priceDisplay: parsePrice(item.price) > 0 ? formatPrice(parsePrice(item.price)) : 'Price Not Disclosed',
+                        priceNumeric: parsePrice(item.price),
                         address: item.address || '',
                         city: item.city || city || '',
                         state: item.state || state || '',

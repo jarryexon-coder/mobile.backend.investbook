@@ -20,7 +20,7 @@ import { EXPO_PUBLIC_API_URL } from '@env';
 const API_URL = EXPO_PUBLIC_API_URL;
 
 export default function ChatScreen({ route, navigation }) {
-  const { dealId, dealTitle } = route.params || {};
+  const { dealId, dealTitle, userId } = route.params || {};
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
@@ -163,7 +163,7 @@ export default function ChatScreen({ route, navigation }) {
       const token = await AsyncStorage.getItem('userToken');
       if (!token) {
         Alert.alert('Login Required', 'Please login to sync this deal.');
-        return;
+        return false;
       }
       
       console.log('🔄 Syncing deal with backend...');
@@ -188,9 +188,7 @@ export default function ChatScreen({ route, navigation }) {
       
       if (response.data.success) {
         console.log('✅ Deal synced successfully');
-        Alert.alert('Success', 'Deal synced! Try sending your message again.');
-        // Now try to send the message again
-        sendMessage();
+        return true;
       } else {
         throw new Error('Sync failed');
       }
@@ -201,6 +199,7 @@ export default function ChatScreen({ route, navigation }) {
         'Unable to sync deal with the chat system. Please try again later.',
         [{ text: 'OK' }]
       );
+      return false;
     }
   };
 
@@ -220,6 +219,7 @@ export default function ChatScreen({ route, navigation }) {
 
       const message = inputText.trim();
 
+      // Use the chatDealId (which is the original deal ID from the listing)
       const response = await axios.post(
         `${API_URL}/deals/${chatDealId}/messages`,
         { message },
@@ -237,35 +237,26 @@ export default function ChatScreen({ route, navigation }) {
         setTimeout(() => {
           flatListRef.current?.scrollToEnd({ animated: true });
         }, 100);
+        console.log('✅ Message sent successfully');
       }
     } catch (error) {
       console.log('⚠️ Error sending message:', error.message);
-      
-      // Special handling for 404 - deal doesn't exist in backend yet
-      if (error.response?.status === 404) {
-        Alert.alert(
-          'Deal Not Synced',
-          'This deal hasn\'t been synced with our chat system yet. Would you like to sync it now?',
-          [
-            { 
-              text: 'Sync & Try Again', 
-              onPress: () => {
-                // Try to sync the deal first
-                syncDealWithBackend();
-              }
-            },
-            { text: 'Cancel', style: 'cancel' }
-          ]
-        );
-        return;
-      }
-      
       if (error.response?.status === 401) {
         Alert.alert('Session Expired', 'Please login again.', [
           { text: 'Login', onPress: () => navigation.navigate('Login') }
         ]);
-      } else if (error.response?.status === 403) {
-        Alert.alert('Access Denied', "You don't have permission to send messages here.");
+      } else if (error.response?.status === 404) {
+        // Try to sync the deal first
+        console.log('🔄 Deal not found, syncing...');
+        const synced = await syncDealWithBackend();
+        // After syncing, try to send again
+        if (synced) {
+          console.log('🔄 Deal synced, retrying message...');
+          // Retry sending the message
+          setTimeout(() => {
+            sendMessage();
+          }, 500);
+        }
       } else {
         Alert.alert('Error', 'Failed to send message. Please try again.');
       }
@@ -273,7 +264,7 @@ export default function ChatScreen({ route, navigation }) {
   };
 
   const renderMessage = ({ item }) => {
-    const isOwnMessage = item.user_id === route.params?.userId;
+    const isOwnMessage = item.user_id === userId;
     return (
       <View style={[styles.messageContainer, isOwnMessage ? styles.ownMessage : styles.otherMessage]}>
         {!isOwnMessage && (
