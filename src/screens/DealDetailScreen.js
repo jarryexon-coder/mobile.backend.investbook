@@ -286,8 +286,10 @@ export default function DealDetailScreen({ route, navigation }) {
           <TouchableOpacity
             style={styles.chatButton}
             onPress={() => {
+              // Use the property ID as the deal ID for sync
+              const dealId = deal.propertyId || deal.id || String(chatId);
               navigation.navigate('Chat', { 
-                dealId: String(chatId), 
+                dealId: String(dealId),
                 dealTitle: deal.title || 'Deal',
                 price: deal.price || 0,
                 location: getLocation(deal) || '',

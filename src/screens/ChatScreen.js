@@ -26,6 +26,7 @@ export default function ChatScreen({ route, navigation }) {
   const [loading, setLoading] = useState(true);
   const [socket, setSocket] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [syncedDealId, setSyncedDealId] = useState(null);
   const flatListRef = useRef(null);
 
   // Normalize the deal ID - could be a string ID, propertyId, or listing_id
@@ -157,19 +158,16 @@ export default function ChatScreen({ route, navigation }) {
     }
   };
 
-  // Add this function to sync the deal with the backend
+  // Sync the deal with the backend
   const syncDealWithBackend = async () => {
     try {
       const token = await AsyncStorage.getItem('userToken');
       if (!token) {
         console.log('❌ No token available for sync');
-        Alert.alert('Login Required', 'Please login to sync this deal.');
         return false;
       }
       
       console.log('🔄 Syncing deal with backend...');
-      console.log('🔑 Token length:', token.length);
-      
       const response = await axios.post(
         `${API_URL}/deals/sync`,
         {
@@ -190,11 +188,11 @@ export default function ChatScreen({ route, navigation }) {
         }
       );
       
-      console.log('📊 Sync response:', response.data);
-      
       if (response.data.success) {
-        console.log('✅ Deal synced successfully');
-        return true;
+        const newDealId = response.data.deal.id;
+        console.log(`✅ Deal synced successfully with ID: ${newDealId}`);
+        setSyncedDealId(newDealId);
+        return newDealId;
       }
       return false;
     } catch (error) {
@@ -202,17 +200,6 @@ export default function ChatScreen({ route, navigation }) {
       if (error.response) {
         console.log('📊 Status:', error.response.status);
         console.log('📊 Data:', error.response.data);
-      }
-      if (error.response?.status === 401) {
-        Alert.alert(
-          'Session Expired',
-          'Please login again.',
-          [{ text: 'Login', onPress: () => navigation.navigate('Login') }]
-        );
-      } else if (error.response?.status === 403) {
-        Alert.alert('Access Denied', 'You don\'t have permission to create deals.');
-      } else {
-        Alert.alert('Error', 'Failed to sync deal. Please try again later.');
       }
       return false;
     }
@@ -232,11 +219,13 @@ export default function ChatScreen({ route, navigation }) {
         return;
       }
 
-      const message = inputText.trim();
+      // Use the synced deal ID if available, otherwise use the original ID
+      const messageDealId = syncedDealId || chatDealId;
+      console.log(`📤 Sending message to deal ID: ${messageDealId}`);
 
-      // Use the chatDealId (which is the original deal ID from the listing)
+      const message = inputText.trim();
       const response = await axios.post(
-        `${API_URL}/deals/${chatDealId}/messages`,
+        `${API_URL}/deals/${messageDealId}/messages`,
         { message },
         { 
           headers: { 
@@ -256,22 +245,22 @@ export default function ChatScreen({ route, navigation }) {
       }
     } catch (error) {
       console.log('⚠️ Error sending message:', error.message);
-      if (error.response?.status === 401) {
-        Alert.alert('Session Expired', 'Please login again.', [
-          { text: 'Login', onPress: () => navigation.navigate('Login') }
-        ]);
-      } else if (error.response?.status === 404) {
-        // Try to sync the deal first
+      
+      // If we get a 404 and haven't synced yet, sync the deal
+      if (error.response?.status === 404 && !syncedDealId) {
         console.log('🔄 Deal not found, syncing...');
-        const synced = await syncDealWithBackend();
-        // After syncing, try to send again
-        if (synced) {
-          console.log('🔄 Deal synced, retrying message...');
-          // Retry sending the message
+        const newId = await syncDealWithBackend();
+        if (newId) {
+          // Now retry with the new ID
+          setSyncedDealId(newId);
           setTimeout(() => {
             sendMessage();
           }, 500);
         }
+      } else if (error.response?.status === 401) {
+        Alert.alert('Session Expired', 'Please login again.', [
+          { text: 'Login', onPress: () => navigation.navigate('Login') }
+        ]);
       } else {
         Alert.alert('Error', 'Failed to send message. Please try again.');
       }
