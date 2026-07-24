@@ -54,7 +54,6 @@ export default function ChatScreen({ route, navigation }) {
 
     console.log(`💬 Opening chat for deal: ${chatDealId} (${dealTitle || 'Untitled'})`);
     
-    // If we have a token, fetch messages
     if (token) {
       fetchMessages();
       setupWebSocket();
@@ -103,7 +102,8 @@ export default function ChatScreen({ route, navigation }) {
 
       newSocket.on('new_message', (data) => {
         console.log('📩 New message received:', data);
-        if (data.deal_id === chatDealId || data.deal_id === syncedDealId) {
+        const targetId = syncedDealId || chatDealId;
+        if (data.deal_id === targetId) {
           setMessages(prev => [...prev, data.message]);
           setTimeout(() => {
             flatListRef.current?.scrollToEnd({ animated: true });
@@ -133,23 +133,43 @@ export default function ChatScreen({ route, navigation }) {
         return;
       }
 
-      console.log(`📥 Fetching messages for deal ${chatDealId}...`);
-      const response = await axios.get(`${API_URL}/deals/${chatDealId}/messages`, {
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
+      // Try using the original ID first
+      let targetId = chatDealId;
+      console.log(`📥 Fetching messages for deal ${targetId}...`);
       
-      setMessages(response.data || []);
-      console.log(`✅ Fetched ${response.data?.length || 0} messages`);
+      try {
+        const response = await axios.get(`${API_URL}/deals/${targetId}/messages`, {
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        setMessages(response.data || []);
+        console.log(`✅ Fetched ${response.data?.length || 0} messages`);
+      } catch (error) {
+        if (error.response?.status === 404) {
+          // Try to sync the deal
+          console.log('🔄 Deal not found, syncing...');
+          const newId = await syncDealWithBackend();
+          if (newId) {
+            // Try again with the new ID
+            const response = await axios.get(`${API_URL}/deals/${newId}/messages`, {
+              headers: { 
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              }
+            });
+            setMessages(response.data || []);
+            console.log(`✅ Fetched ${response.data?.length || 0} messages from synced deal`);
+          }
+        } else {
+          console.log('⚠️ Error fetching messages:', error.message);
+          setMessages([]);
+        }
+      }
     } catch (error) {
       console.log('⚠️ Error fetching messages:', error.message);
-      if (error.response?.status === 401) {
-        Alert.alert('Session Expired', 'Please login again.');
-      } else {
-        setMessages([]);
-      }
+      setMessages([]);
     } finally {
       setLoading(false);
     }
@@ -162,6 +182,12 @@ export default function ChatScreen({ route, navigation }) {
         return false;
       }
       
+      if (isSyncing) {
+        console.log('⏳ Already syncing, please wait...');
+        return false;
+      }
+      
+      setIsSyncing(true);
       console.log('🔄 Syncing deal with backend...');
       console.log(`🔑 Token length: ${token.length}`);
       
@@ -184,6 +210,8 @@ export default function ChatScreen({ route, navigation }) {
         }
       );
       
+      setIsSyncing(false);
+      
       if (response.data.success) {
         const newDealId = response.data.deal.id;
         console.log(`✅ Deal synced successfully with ID: ${newDealId}`);
@@ -192,6 +220,7 @@ export default function ChatScreen({ route, navigation }) {
       }
       return false;
     } catch (error) {
+      setIsSyncing(false);
       console.log('❌ Failed to sync deal:', error.message);
       return false;
     }
@@ -210,7 +239,7 @@ export default function ChatScreen({ route, navigation }) {
         return;
       }
 
-      // ✅ FIX: Use syncedDealId if available, otherwise use original
+      // ✅ CRITICAL FIX: Use syncedDealId if available, otherwise use original
       const messageDealId = syncedDealId || chatDealId;
       console.log(`📤 Sending message to deal ID: ${messageDealId}`);
 
@@ -238,21 +267,23 @@ export default function ChatScreen({ route, navigation }) {
       console.log(`⚠️ Error sending message (to ID: ${syncedDealId || chatDealId}):`, error.message);
       
       if (error.response?.status === 404 && !syncedDealId && !isSyncing) {
-        // Only sync if we haven't synced yet
-        setIsSyncing(true);
         console.log('🔄 Deal not found, syncing...');
         const newId = await syncDealWithBackend();
-        setIsSyncing(false);
         if (newId) {
           console.log(`✅ Synced with ID: ${newId}, retrying...`);
-          // Retry sending the message with the new ID
+          // ✅ CRITICAL FIX: Update syncedDealId before retrying
+          setSyncedDealId(newId);
+          // Give state time to update
           setTimeout(() => {
             sendMessage();
-          }, 500);
+          }, 300);
         }
       } else if (error.response?.status === 404 && syncedDealId) {
-        // If we already synced but still get 404, the deal might not exist
         Alert.alert('Error', 'Deal not found. Please try again later.');
+      } else if (error.response?.status === 401) {
+        Alert.alert('Session Expired', 'Please login again.', [
+          { text: 'Login', onPress: () => navigation.navigate('Login') }
+        ]);
       } else {
         Alert.alert('Error', 'Failed to send message. Please try again.');
       }
