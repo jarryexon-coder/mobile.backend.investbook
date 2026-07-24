@@ -28,19 +28,29 @@ export default function ChatScreen({ route, navigation }) {
   const [isConnected, setIsConnected] = useState(false);
   const flatListRef = useRef(null);
 
+  // Normalize the deal ID - could be a string ID, propertyId, or listing_id
+  const chatDealId = dealId ? String(dealId) : null;
+
+  // Check if this is a mock deal
+  const isMockDeal = chatDealId && 
+                     (chatDealId.startsWith('mock-') || 
+                      chatDealId.startsWith('item-') ||
+                      chatDealId === 'undefined' ||
+                      chatDealId === 'null');
+
   useEffect(() => {
-    // If no deal ID is provided, show a message and go back
-    if (!dealId) {
+    // If it's a mock deal or no ID, show a friendly message
+    if (isMockDeal || !chatDealId) {
       Alert.alert(
-        'No Chat Selected',
-        'Please select a deal to chat about.',
+        'Chat Unavailable',
+        'Chat is only available for real listings. Please select a valid listing to chat about.',
         [{ text: 'Go Back', onPress: () => navigation.goBack() }]
       );
       setLoading(false);
       return;
     }
 
-    console.log(`💬 Opening chat for deal: ${dealId} (${dealTitle || 'Untitled'})`);
+    console.log(`💬 Opening chat for deal: ${chatDealId} (${dealTitle || 'Untitled'})`);
     
     fetchMessages();
     setupWebSocket();
@@ -51,7 +61,7 @@ export default function ChatScreen({ route, navigation }) {
         console.log('🔌 WebSocket disconnected');
       }
     };
-  }, [dealId]);
+  }, [chatDealId]);
 
   const setupWebSocket = async () => {
     try {
@@ -71,7 +81,7 @@ export default function ChatScreen({ route, navigation }) {
       newSocket.on('connect', () => {
         console.log('✅ WebSocket connected');
         setIsConnected(true);
-        newSocket.emit('join_deal_chat', { deal_id: dealId });
+        newSocket.emit('join_deal_chat', { deal_id: chatDealId });
       });
 
       newSocket.on('disconnect', () => {
@@ -81,7 +91,7 @@ export default function ChatScreen({ route, navigation }) {
 
       newSocket.on('new_message', (data) => {
         console.log('📩 New message received:', data);
-        if (data.deal_id === dealId) {
+        if (data.deal_id === chatDealId) {
           setMessages(prev => [...prev, data.message]);
           setTimeout(() => {
             flatListRef.current?.scrollToEnd({ animated: true });
@@ -113,8 +123,8 @@ export default function ChatScreen({ route, navigation }) {
         return;
       }
 
-      console.log(`📥 Fetching messages for deal ${dealId}...`);
-      const response = await axios.get(`${API_URL}/deals/${dealId}/messages`, {
+      console.log(`📥 Fetching messages for deal ${chatDealId}...`);
+      const response = await axios.get(`${API_URL}/deals/${chatDealId}/messages`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
@@ -122,7 +132,6 @@ export default function ChatScreen({ route, navigation }) {
       console.log(`✅ Fetched ${response.data?.length || 0} messages`);
     } catch (error) {
       console.log('⚠️ Error fetching messages:', error.message);
-      // If 404, it means no messages yet - that's fine
       if (error.response?.status === 404) {
         console.log('📭 No messages found for this deal yet');
         setMessages([]);
@@ -133,8 +142,14 @@ export default function ChatScreen({ route, navigation }) {
           "You don't have permission to view this chat.",
           [{ text: 'Go Back', onPress: () => navigation.goBack() }]
         );
+      } else if (error.response?.status === 401) {
+        console.log('🔑 Authentication required for chat');
+        Alert.alert(
+          'Login Required',
+          'Please login to access chat.',
+          [{ text: 'Login', onPress: () => navigation.navigate('Login') }]
+        );
       } else {
-        // For other errors, show empty state
         setMessages([]);
       }
     } finally {
@@ -151,10 +166,15 @@ export default function ChatScreen({ route, navigation }) {
 
     try {
       const token = await AsyncStorage.getItem('token');
+      if (!token) {
+        Alert.alert('Login Required', 'Please login to send messages.');
+        return;
+      }
+
       const message = inputText.trim();
 
       const response = await axios.post(
-        `${API_URL}/deals/${dealId}/messages`,
+        `${API_URL}/deals/${chatDealId}/messages`,
         { message },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -173,6 +193,8 @@ export default function ChatScreen({ route, navigation }) {
       } else if (error.response?.status === 404) {
         Alert.alert('Deal Not Found', 'This deal no longer exists.');
         navigation.goBack();
+      } else if (error.response?.status === 401) {
+        Alert.alert('Login Required', 'Please login to send messages.');
       } else {
         Alert.alert('Error', 'Failed to send message. Please try again.');
       }

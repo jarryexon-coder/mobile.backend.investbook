@@ -35,6 +35,25 @@ const formatPrice = (price) => {
   })}`;
 };
 
+// Helper to get display title
+const getDisplayTitle = (item) => {
+  if (item.title) return item.title;
+  if (item.name) return item.name;
+  if (item.address) return `Property at ${item.address}`;
+  if (item.listingName) return item.listingName;
+  return 'Property Listing';
+};
+
+// Helper to get display location
+const getDisplayLocation = (item) => {
+  if (item.location) return item.location;
+  if (item.address) return item.address;
+  if (item.city && item.state) return `${item.city}, ${item.state}`;
+  if (item.city) return item.city;
+  if (item.state) return item.state;
+  return 'Location N/A';
+};
+
 // Filter options
 const SORT_OPTIONS = [
   { label: 'Default Order', value: 'default' },
@@ -169,7 +188,6 @@ export default function OpportunitiesScreen({ navigation }) {
         });
         break;
       default:
-        // Keep original order
         break;
     }
     
@@ -219,7 +237,19 @@ export default function OpportunitiesScreen({ navigation }) {
     const displayPrice = item.priceDisplay || formatPrice(item.price);
     const listingInfo = getListingType(item);
     const subtype = getSubtype(item);
-    const title = item.title || item.name || `${listingInfo.type} for Sale`;
+    const title = getDisplayTitle(item);
+    const location = getDisplayLocation(item);
+    
+    // Check if this has a valid ID for chat
+    const hasValidId = item.id && 
+                      typeof item.id === 'string' && 
+                      !item.id.startsWith('mock-') &&
+                      !item.id.startsWith('item-') &&
+                      item.hasValidId !== false;
+    
+    // For cached items from LoopNet, they should have propertyId
+    const hasPropertyId = item.propertyId || item.listing_id;
+    const canChat = hasValidId || hasPropertyId;
     
     return (
       <View style={styles.card}>
@@ -251,8 +281,21 @@ export default function OpportunitiesScreen({ navigation }) {
           </View>
           
           <Text style={styles.cardLocation}>
-            📍 {item.location || item.address || item.city || 'N/A'}
+            📍 {location}
           </Text>
+          
+          {/* Show chat badge for items that support chat */}
+          {canChat && (
+            <View style={styles.chatBadge}>
+              <Text style={styles.chatBadgeText}>💬 Chat available</Text>
+            </View>
+          )}
+          
+          {item.source === 'Sample Data' && (
+            <View style={styles.mockBadge}>
+              <Text style={styles.mockBadgeText}>📊 Sample Data</Text>
+            </View>
+          )}
         </TouchableOpacity>
       </View>
     );
@@ -414,6 +457,15 @@ export default function OpportunitiesScreen({ navigation }) {
           <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
             <Text style={styles.searchButtonText}>🔍</Text>
           </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.searchButton, styles.refreshButton]} 
+            onPress={() => {
+              console.log('🔄 Manual refresh triggered');
+              fetchOpportunities(searchLocation);
+            }}
+          >
+            <Text style={styles.searchButtonText}>🔄</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Filter Bar */}
@@ -505,6 +557,10 @@ const styles = StyleSheet.create({
   searchButtonText: {
     fontSize: 18,
     color: 'white',
+  },
+  refreshButton: {
+    backgroundColor: '#10b981',
+    marginLeft: 4,
   },
   filterBar: {
     flexDirection: 'row',
@@ -622,6 +678,30 @@ const styles = StyleSheet.create({
   sourceText: {
     fontSize: 10,
     color: '#666',
+  },
+  chatBadge: {
+    marginTop: 6,
+    backgroundColor: '#d1fae5',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    alignSelf: 'flex-start',
+  },
+  chatBadgeText: {
+    fontSize: 10,
+    color: '#065f46',
+  },
+  mockBadge: {
+    marginTop: 6,
+    backgroundColor: '#fef3c7',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    alignSelf: 'flex-start',
+  },
+  mockBadgeText: {
+    fontSize: 10,
+    color: '#92400e',
   },
   loadingContainer: {
     flex: 1,

@@ -347,7 +347,6 @@ export const scrapeBizBuySell = async (keyword = '', location = '', state = '', 
     return mockData;
 };
 
-// Combined fetch function
 export const fetchAllOpportunities = async (searchParams = {}) => {
     const {
         keyword = '',
@@ -355,7 +354,7 @@ export const fetchAllOpportunities = async (searchParams = {}) => {
         state = '',
         city = '',
         propertyType = 'all',
-        limit = 100,
+        limit = 200,
         searchType = 'For_Sale',
         nationwide = true,
     } = searchParams;
@@ -382,14 +381,68 @@ export const fetchAllOpportunities = async (searchParams = {}) => {
         const data = await scrapeBizBuySell(keyword, searchLocation, searchState, Math.min(limit, 50));
         
         if (data && data.length > 0) {
-            const businesses = data.filter(item => 
-                item.category || item.cashFlow || item.revenue || 
-                (item.source && item.source.includes('Business'))
-            );
-            const properties = data.filter(item => 
-                item.propertyType || item.address || item.size ||
-                (item.source && item.source.includes('Property'))
-            );
+            // IMPROVED CLASSIFICATION: Better separation of businesses and properties
+            const businesses = [];
+            const properties = [];
+            
+            data.forEach(item => {
+                // Check if it's a business (has business-specific fields)
+                const isBusiness = 
+                    item.category || 
+                    item.cashFlow || 
+                    item.revenue || 
+                    item.ebitda ||
+                    item.broker ||
+                    (item.source && item.source.includes('Business')) ||
+                    (item.title && (
+                        item.title.includes('Business') || 
+                        item.title.includes('Company') || 
+                        item.title.includes('Agency') ||
+                        item.title.includes('Franchise') ||
+                        item.title.includes('for Sale') && item.buildingSize
+                    ));
+                
+                // Check if it's a property (has property-specific fields)
+                const isProperty = 
+                    item.propertyType || 
+                    item.address || 
+                    item.size || 
+                    item.lotSize ||
+                    item.buildingSize ||
+                    item.totalSize ||
+                    (item.source && item.source.includes('Property')) ||
+                    (item.title && (
+                        item.title.includes('Building') || 
+                        item.title.includes('Property') || 
+                        item.title.includes('Land') ||
+                        item.title.includes('Warehouse') ||
+                        item.title.includes('Office') ||
+                        item.title.includes('Retail')
+                    ));
+                
+                // Classify based on what's available
+                if (isBusiness && !isProperty) {
+                    businesses.push(item);
+                } else if (isProperty && !isBusiness) {
+                    properties.push(item);
+                } else if (isBusiness && isProperty) {
+                    // If both, check which one is stronger
+                    if (item.propertyType || item.address) {
+                        properties.push(item);
+                    } else {
+                        businesses.push(item);
+                    }
+                } else {
+                    // Default: check if it has a price and title, guess based on source
+                    if (item.source && item.source.includes('Sample')) {
+                        businesses.push(item);
+                    } else if (item.propertyType || item.address) {
+                        properties.push(item);
+                    } else {
+                        businesses.push(item);
+                    }
+                }
+            });
             
             results.businesses = businesses;
             results.realEstate = properties;

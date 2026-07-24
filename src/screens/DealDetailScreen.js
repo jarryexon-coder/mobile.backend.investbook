@@ -25,7 +25,10 @@ export default function DealDetailScreen({ route, navigation }) {
   const getDisplayPrice = (deal) => {
     if (deal.priceDisplay) return deal.priceDisplay;
     if (deal.price) return `$${deal.price.toLocaleString()}`;
-    return 'N/A';
+    if (deal.priceNumeric) return `$${deal.priceNumeric.toLocaleString()}`;
+    if (deal.formattedPrice) return deal.formattedPrice;
+    if (deal.priceText) return deal.priceText;
+    return 'Price Not Disclosed';
   };
 
   // Helper to get property type
@@ -33,6 +36,7 @@ export default function DealDetailScreen({ route, navigation }) {
     if (deal.propertyType) return deal.propertyType;
     if (deal.category) return deal.category;
     if (deal.propertySubtype) return deal.propertySubtype;
+    if (deal.listing_category) return deal.listing_category;
     return null;
   };
 
@@ -42,6 +46,18 @@ export default function DealDetailScreen({ route, navigation }) {
     if (deal.address) return deal.address;
     if (deal.city && deal.state) return `${deal.city}, ${deal.state}`;
     if (deal.city) return deal.city;
+    if (deal.state) return deal.state;
+    if (deal.country) return deal.country;
+    return null;
+  };
+
+  // Helper to get the best image URL
+  const getImageUrl = (deal) => {
+    if (deal.imageUrl) return deal.imageUrl;
+    if (deal.image) return deal.image;
+    if (deal.photo) return deal.photo;
+    if (deal.images && deal.images.length > 0) return deal.images[0];
+    if (deal.image_urls && deal.image_urls.length > 0) return deal.image_urls[0];
     return null;
   };
 
@@ -70,23 +86,49 @@ export default function DealDetailScreen({ route, navigation }) {
   }
 
   // Determine data source
-  const isBizBuySell = deal.source === 'BizBuySell' || deal.source?.includes('BizBuySell') || deal.category;
-  const isLoopNet = deal.source === 'Property Listing' || deal.source?.includes('LoopNet') || deal.propertyType;
-  const isMockData = deal.source === 'Sample Data' || deal.source === 'Mock Data';
+  const isBizBuySell = deal.source === 'BizBuySell' || 
+                       deal.source?.includes('BizBuySell') || 
+                       deal.category ||
+                       deal.listing_category ||
+                       deal.cashFlow ||
+                       deal.revenue;
 
-  // Get the best image URL
-  const imageUrl = deal.imageUrl || 
-                   deal.image || 
-                   deal.photo || 
-                   (deal.images && deal.images.length > 0 ? deal.images[0] : null);
+  const isLoopNet = deal.source === 'Property Listing' || 
+                    deal.source?.includes('LoopNet') || 
+                    deal.propertyType ||
+                    deal.address ||
+                    deal.size ||
+                    deal.lotSize;
+
+  const isMockData = deal.source === 'Sample Data' || 
+                     deal.source === 'Mock Data' ||
+                     (deal.id && typeof deal.id === 'string' && deal.id.startsWith('mock-'));
+
+  const isMockDeal = deal.id && typeof deal.id === 'string' && deal.id.startsWith('mock-');
+
+  // Get image
+  const imageUrl = getImageUrl(deal);
 
   // Get broker info
-  const brokerName = deal.broker || deal.brokerName || deal.broker_company || null;
+  const brokerName = deal.broker || deal.brokerName || null;
+  const brokerCompany = deal.brokerCompany || deal.broker_company || null;
   const brokerPhone = deal.brokerPhone || deal.contact_phone || null;
   const brokerEmail = deal.brokerEmail || null;
 
   // Get property facts
   const propertyFacts = deal.details?.propertyFacts || deal.propertyFacts || null;
+
+  // Check if this has a valid ID for chat
+  const hasValidId = deal.id && 
+                    typeof deal.id === 'string' && 
+                    !deal.id.startsWith('mock-') &&
+                    !deal.id.startsWith('item-');
+
+  const hasPropertyId = deal.propertyId || deal.listing_id;
+  const canChat = hasValidId || hasPropertyId || deal.hasValidId;
+
+  // Get the ID to use for chat
+  const chatId = deal.id || deal.propertyId || deal.listing_id;
 
   return (
     <ScrollView style={styles.container}>
@@ -174,13 +216,13 @@ export default function DealDetailScreen({ route, navigation }) {
             {deal.zoning ? <DetailRow label="Zoning" value={deal.zoning} /> : null}
             
             {/* Property Facts */}
-            {propertyFacts && (
+            {propertyFacts && typeof propertyFacts === 'object' && Object.keys(propertyFacts).length > 0 && (
               <View style={styles.factsSection}>
                 <Text style={styles.sectionTitle}>Property Facts</Text>
                 {Object.entries(propertyFacts).map(([key, value]) => {
                   if (value && value !== 'undefined' && value !== 'null') {
                     const label = key.replace(/([A-Z])/g, ' $1').trim();
-                    return <DetailRow key={key} label={label} value={value} />;
+                    return <DetailRow key={key} label={label} value={String(value)} />;
                   }
                   return null;
                 })}
@@ -190,7 +232,7 @@ export default function DealDetailScreen({ route, navigation }) {
         )}
 
         {/* Broker Info */}
-        {(brokerName || brokerPhone || brokerEmail) && (
+        {(brokerName || brokerCompany || brokerPhone || brokerEmail) && (
           <View style={styles.brokerSection}>
             <Text style={styles.sectionTitle}>📞 Broker Information</Text>
             {brokerName && <DetailRow label="Name" value={brokerName} />}
@@ -237,17 +279,17 @@ export default function DealDetailScreen({ route, navigation }) {
           </TouchableOpacity>
         ) : null}
 
-        {/* Chat Button */}
-        {deal.id && (
+        {/* Chat Button - Show for all items with valid IDs */}
+        {canChat && chatId && !isMockDeal && (
           <TouchableOpacity
             style={styles.chatButton}
             onPress={() => navigation.navigate('Chat', { 
-              dealId: deal.id, 
+              dealId: String(chatId), 
               dealTitle: deal.title || 'Deal' 
             })}
           >
             <Icon name="chatbubble-outline" size={20} color="white" />
-            <Text style={styles.chatButtonText}>Chat about this deal</Text>
+            <Text style={styles.chatButtonText}>💬 Chat about this deal</Text>
           </TouchableOpacity>
         )}
       </View>
