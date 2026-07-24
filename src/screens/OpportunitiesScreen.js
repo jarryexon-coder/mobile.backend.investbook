@@ -11,6 +11,7 @@ import {
   TextInput,
   SafeAreaView,
   StatusBar,
+  Modal,
 } from 'react-native';
 import { fetchAllOpportunities } from '../services/scraperService';
 
@@ -18,7 +19,6 @@ import { fetchAllOpportunities } from '../services/scraperService';
 const formatPrice = (price) => {
   if (!price || price === 0) return 'N/A';
   
-  // If price is a number, format with commas
   if (typeof price === 'number') {
     return `$${price.toLocaleString('en-US', {
       minimumFractionDigits: 0,
@@ -26,7 +26,6 @@ const formatPrice = (price) => {
     })}`;
   }
   
-  // If price is a string, try to parse it
   const numPrice = parseFloat(String(price).replace(/[$,]/g, ''));
   if (isNaN(numPrice) || numPrice === 0) return 'N/A';
   
@@ -36,18 +35,20 @@ const formatPrice = (price) => {
   })}`;
 };
 
-// Short format for compact displays (if needed)
-const formatPriceShort = (price) => {
-  if (!price || price === 0) return 'N/A';
-  
-  if (price >= 1000000) {
-    return `$${(price / 1000000).toFixed(1)}M`;
-  } else if (price >= 1000) {
-    return `$${(price / 1000).toFixed(1)}K`;
-  } else {
-    return `$${price.toLocaleString()}`;
-  }
-};
+// Filter options
+const SORT_OPTIONS = [
+  { label: 'Default Order', value: 'default' },
+  { label: 'Price: Low to High', value: 'price_asc' },
+  { label: 'Price: High to Low', value: 'price_desc' },
+  { label: 'Newest First', value: 'date_desc' },
+  { label: 'Oldest First', value: 'date_asc' },
+];
+
+const TYPE_OPTIONS = [
+  { label: 'All Types', value: 'all' },
+  { label: 'Businesses', value: 'business' },
+  { label: 'Properties', value: 'property' },
+];
 
 export default function OpportunitiesScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
@@ -56,6 +57,13 @@ export default function OpportunitiesScreen({ navigation }) {
   const [error, setError] = useState(null);
   const [searchLocation, setSearchLocation] = useState('');
   const [activeTab, setActiveTab] = useState('all');
+  
+  // Filter states
+  const [sortBy, setSortBy] = useState('default');
+  const [filterType, setFilterType] = useState('all');
+  const [showFilters, setShowFilters] = useState(false);
+  const [minPrice, setMinPrice] = useState('');
+  const [maxPrice, setMaxPrice] = useState('');
 
   useEffect(() => {
     fetchOpportunities();
@@ -66,18 +74,16 @@ export default function OpportunitiesScreen({ navigation }) {
       setLoading(true);
       setError(null);
       
-      // If no location is specified, search nationwide
       let searchParams = {
         keyword: '',
         location: '',
         city: '',
         state: '',
         propertyType: 'all',
-        limit: 100,
-        nationwide: true, // Enable nationwide search
+        limit: 200,
+        nationwide: true,
       };
       
-      // If location is specified, use it
       if (location && location.trim()) {
         const locationParts = location.split(',').map(s => s.trim());
         if (locationParts.length === 2) {
@@ -114,34 +120,82 @@ export default function OpportunitiesScreen({ navigation }) {
     fetchOpportunities(searchLocation);
   };
 
-  // Filter items based on active tab
-  const getFilteredItems = () => {
-    const allItems = [...(opportunities.businesses || []), ...(opportunities.realEstate || [])];
+  const applyFilters = (items) => {
+    let filtered = [...items];
     
-    if (activeTab === 'all') return allItems;
-    if (activeTab === 'businesses') return opportunities.businesses || [];
-    if (activeTab === 'realestate') return opportunities.realEstate || [];
-    return allItems;
+    // Filter by type
+    if (filterType === 'business') {
+      filtered = filtered.filter(item => 
+        item.category || item.cashFlow || item.revenue || 
+        (item.source && item.source.includes('Business'))
+      );
+    } else if (filterType === 'property') {
+      filtered = filtered.filter(item => 
+        item.propertyType || item.address || item.size || 
+        (item.source && item.source.includes('Property'))
+      );
+    }
+    
+    // Filter by price range
+    const min = parseFloat(minPrice);
+    const max = parseFloat(maxPrice);
+    if (!isNaN(min) && min > 0) {
+      filtered = filtered.filter(item => (item.price || 0) >= min);
+    }
+    if (!isNaN(max) && max > 0) {
+      filtered = filtered.filter(item => (item.price || 0) <= max);
+    }
+    
+    // Sort
+    switch (sortBy) {
+      case 'price_asc':
+        filtered.sort((a, b) => (a.price || 0) - (b.price || 0));
+        break;
+      case 'price_desc':
+        filtered.sort((a, b) => (b.price || 0) - (a.price || 0));
+        break;
+      case 'date_desc':
+        filtered.sort((a, b) => {
+          const dateA = a.created_at || a.fetchedAt || a.details?.fetchedAt || '';
+          const dateB = b.created_at || b.fetchedAt || b.details?.fetchedAt || '';
+          return dateB.localeCompare(dateA);
+        });
+        break;
+      case 'date_asc':
+        filtered.sort((a, b) => {
+          const dateA = a.created_at || a.fetchedAt || a.details?.fetchedAt || '';
+          const dateB = b.created_at || b.fetchedAt || b.details?.fetchedAt || '';
+          return dateA.localeCompare(dateB);
+        });
+        break;
+      default:
+        // Keep original order
+        break;
+    }
+    
+    return filtered;
   };
 
-  const filteredItems = getFilteredItems();
+  // Get all items and apply filters
+  const getAllItems = () => {
+    const allItems = [...(opportunities.businesses || []), ...(opportunities.realEstate || [])];
+    return applyFilters(allItems);
+  };
 
-  // Smart detection: Determine listing type
+  const filteredItems = getAllItems();
+
+  // Smart detection
   const getListingType = (item) => {
-    // Check if it's a property (has propertyType, address, lotSize, buildingSize, or from LoopNet)
     if (item.propertyType || item.address || item.lotSize || item.buildingSize || 
-        item.size || item.priceDisplay?.includes('M') && !item.category) {
+        item.size || (item.priceDisplay?.includes('M') && !item.category)) {
       return { type: 'Property', emoji: '🏢' };
     }
-    // Check if it's a business (has category, cashFlow, revenue, or from BizBuySell)
     if (item.category || item.cashFlow || item.revenue || item.broker) {
       return { type: 'Business', emoji: '💼' };
     }
-    // Default fallback
     return { type: 'Opportunity', emoji: '📋' };
   };
 
-  // Get subtype for display
   const getSubtype = (item) => {
     if (item.propertyType) return item.propertyType;
     if (item.category) return item.category;
@@ -149,11 +203,20 @@ export default function OpportunitiesScreen({ navigation }) {
     return null;
   };
 
+  // Get sort label
+  const getSortLabel = () => {
+    const option = SORT_OPTIONS.find(o => o.value === sortBy);
+    return option ? option.label : 'Sort';
+  };
+
+  // Get type label
+  const getTypeLabel = () => {
+    const option = TYPE_OPTIONS.find(o => o.value === filterType);
+    return option ? option.label : 'Type';
+  };
+
   const renderItem = ({ item }) => {
-    // Use priceDisplay if available, otherwise format the price
     const displayPrice = item.priceDisplay || formatPrice(item.price);
-    
-    // Get listing type
     const listingInfo = getListingType(item);
     const subtype = getSubtype(item);
     const title = item.title || item.name || `${listingInfo.type} for Sale`;
@@ -190,16 +253,128 @@ export default function OpportunitiesScreen({ navigation }) {
           <Text style={styles.cardLocation}>
             📍 {item.location || item.address || item.city || 'N/A'}
           </Text>
-          
-          {item.source === 'Mock Data' && (
-            <View style={styles.mockBadge}>
-              <Text style={styles.mockBadgeText}>📊 Sample Data</Text>
-            </View>
-          )}
         </TouchableOpacity>
       </View>
     );
   };
+
+  // Filter Modal
+  const FilterModal = () => (
+    <Modal
+      visible={showFilters}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={() => setShowFilters(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>🔍 Filters</Text>
+            <TouchableOpacity onPress={() => setShowFilters(false)}>
+              <Text style={styles.modalClose}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {/* Sort By */}
+            <View style={styles.filterSection}>
+              <Text style={styles.filterLabel}>Sort By</Text>
+              <View style={styles.filterOptions}>
+                {SORT_OPTIONS.map((option) => (
+                  <TouchableOpacity
+                    key={option.value}
+                    style={[
+                      styles.filterChip,
+                      sortBy === option.value && styles.filterChipActive,
+                    ]}
+                    onPress={() => setSortBy(option.value)}
+                  >
+                    <Text
+                      style={[
+                        styles.filterChipText,
+                        sortBy === option.value && styles.filterChipTextActive,
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Type Filter */}
+            <View style={styles.filterSection}>
+              <Text style={styles.filterLabel}>Type</Text>
+              <View style={styles.filterOptions}>
+                {TYPE_OPTIONS.map((option) => (
+                  <TouchableOpacity
+                    key={option.value}
+                    style={[
+                      styles.filterChip,
+                      filterType === option.value && styles.filterChipActive,
+                    ]}
+                    onPress={() => setFilterType(option.value)}
+                  >
+                    <Text
+                      style={[
+                        styles.filterChipText,
+                        filterType === option.value && styles.filterChipTextActive,
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Price Range */}
+            <View style={styles.filterSection}>
+              <Text style={styles.filterLabel}>Price Range</Text>
+              <View style={styles.priceRangeContainer}>
+                <TextInput
+                  style={styles.priceInput}
+                  placeholder="Min $"
+                  value={minPrice}
+                  onChangeText={setMinPrice}
+                  keyboardType="numeric"
+                />
+                <Text style={styles.priceRangeSeparator}>to</Text>
+                <TextInput
+                  style={styles.priceInput}
+                  placeholder="Max $"
+                  value={maxPrice}
+                  onChangeText={setMaxPrice}
+                  keyboardType="numeric"
+                />
+              </View>
+            </View>
+
+            {/* Apply & Reset Buttons */}
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.resetButton]}
+                onPress={() => {
+                  setSortBy('default');
+                  setFilterType('all');
+                  setMinPrice('');
+                  setMaxPrice('');
+                }}
+              >
+                <Text style={styles.resetButtonText}>Reset All</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.applyButton]}
+                onPress={() => setShowFilters(false)}
+              >
+                <Text style={styles.applyButtonText}>Apply Filters</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
 
   if (loading) {
     return (
@@ -230,7 +405,7 @@ export default function OpportunitiesScreen({ navigation }) {
         <View style={styles.searchContainer}>
           <TextInput
             style={styles.searchInput}
-            placeholder="Search location (e.g., Austin, TX) or leave empty for nationwide"
+            placeholder="Search location (e.g., Austin, TX)"
             value={searchLocation}
             onChangeText={setSearchLocation}
             onSubmitEditing={handleSearch}
@@ -241,39 +416,34 @@ export default function OpportunitiesScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* Tabs */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabContainer}>
-          <TouchableOpacity 
-            style={[styles.tabButton, activeTab === 'all' && styles.tabButtonActive]}
-            onPress={() => setActiveTab('all')}
+        {/* Filter Bar */}
+        <View style={styles.filterBar}>
+          <TouchableOpacity
+            style={styles.filterButton}
+            onPress={() => setShowFilters(true)}
           >
-            <Text style={[styles.tabText, activeTab === 'all' && styles.tabTextActive]}>
-              All ({opportunities.businesses?.length + opportunities.realEstate?.length})
-            </Text>
+            <Text style={styles.filterButtonText}>⚙️ Filters</Text>
+            {(sortBy !== 'default' || filterType !== 'all' || minPrice || maxPrice) && (
+              <View style={styles.filterBadge}>
+                <Text style={styles.filterBadgeText}>•</Text>
+              </View>
+            )}
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.tabButton, activeTab === 'businesses' && styles.tabButtonActive]}
-            onPress={() => setActiveTab('businesses')}
-          >
-            <Text style={[styles.tabText, activeTab === 'businesses' && styles.tabTextActive]}>
-              💼 Businesses ({opportunities.businesses?.length || 0})
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.tabButton, activeTab === 'realestate' && styles.tabButtonActive]}
-            onPress={() => setActiveTab('realestate')}
-          >
-            <Text style={[styles.tabText, activeTab === 'realestate' && styles.tabTextActive]}>
-              🏢 Real Estate ({opportunities.realEstate?.length || 0})
-            </Text>
-          </TouchableOpacity>
-        </ScrollView>
+          <Text style={styles.filterSummary}>
+            {filteredItems.length} results
+          </Text>
+        </View>
+
+        {/* Filter Modal */}
+        <FilterModal />
 
         {/* Results Count */}
         <View style={styles.resultCountContainer}>
           <Text style={styles.resultCountText}>
             Showing {filteredItems.length} results
             {searchLocation ? ` in ${searchLocation}` : ' nationwide'}
+            {sortBy !== 'default' && ` • ${getSortLabel()}`}
+            {filterType !== 'all' && ` • ${getTypeLabel()}`}
           </Text>
         </View>
 
@@ -289,8 +459,8 @@ export default function OpportunitiesScreen({ navigation }) {
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyEmoji}>📭</Text>
-              <Text style={styles.emptyText}>No opportunities found</Text>
-              <Text style={styles.emptySubtext}>Try adjusting your search or location</Text>
+              <Text style={styles.emptyText}>No results found</Text>
+              <Text style={styles.emptySubtext}>Try adjusting your filters</Text>
             </View>
           }
         />
@@ -336,29 +506,43 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: 'white',
   },
-  tabContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-  },
-  tabButton: {
+  filterBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 20,
-    marginRight: 8,
+  },
+  filterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: 'white',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#ddd',
   },
-  tabButtonActive: {
-    backgroundColor: '#2563eb',
-    borderColor: '#2563eb',
+  filterButtonText: {
+    fontSize: 14,
+    color: '#333',
+    fontWeight: '500',
   },
-  tabText: {
+  filterBadge: {
+    marginLeft: 6,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#2563eb',
+  },
+  filterBadgeText: {
+    color: 'white',
+    fontSize: 10,
+    textAlign: 'center',
+  },
+  filterSummary: {
     fontSize: 13,
     color: '#666',
-  },
-  tabTextActive: {
-    color: 'white',
   },
   resultCountContainer: {
     paddingHorizontal: 16,
@@ -439,18 +623,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#666',
   },
-  mockBadge: {
-    marginTop: 6,
-    backgroundColor: '#fef3c7',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-    alignSelf: 'flex-start',
-  },
-  mockBadgeText: {
-    fontSize: 10,
-    color: '#92400e',
-  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -506,5 +678,115 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#999',
     marginTop: 4,
+  },
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1a1a1a',
+  },
+  modalClose: {
+    fontSize: 24,
+    color: '#666',
+    padding: 8,
+  },
+  filterSection: {
+    marginBottom: 20,
+  },
+  filterLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
+  },
+  filterOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  filterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#f0f0f0',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  filterChipActive: {
+    backgroundColor: '#2563eb',
+    borderColor: '#2563eb',
+  },
+  filterChipText: {
+    fontSize: 13,
+    color: '#666',
+  },
+  filterChipTextActive: {
+    color: 'white',
+  },
+  priceRangeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  priceInput: {
+    flex: 1,
+    backgroundColor: '#f9f9f9',
+    borderRadius: 8,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    fontSize: 14,
+  },
+  priceRangeSeparator: {
+    fontSize: 14,
+    color: '#666',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 10,
+    marginBottom: 20,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  resetButton: {
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  resetButtonText: {
+    color: '#666',
+    fontWeight: '600',
+  },
+  applyButton: {
+    backgroundColor: '#2563eb',
+  },
+  applyButtonText: {
+    color: 'white',
+    fontWeight: '600',
   },
 });
