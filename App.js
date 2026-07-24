@@ -1,12 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { ActivityIndicator, View, Text } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { AuthProvider, useAuth } from './src/hooks/useAuth';
-import { initializeActorHealth } from './src/services/actorHealthCheck';
 
 // Import screens
 import LoginScreen from './src/screens/LoginScreen';
@@ -19,12 +17,11 @@ import ProfileScreen from './src/screens/ProfileScreen';
 import DealDetailScreen from './src/screens/DealDetailScreen';
 import TermsScreen from './src/screens/TermsScreen';
 import ChatScreen from './src/screens/ChatScreen';
-import CreateDealScreen from './src/screens/CreateDealScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
-// Main Tabs Navigator - INCLUDING CHAT
+// Main Tabs Navigator
 function MainTabs() {
   return (
     <Tab.Navigator
@@ -39,8 +36,6 @@ function MainTabs() {
             iconName = focused ? 'briefcase' : 'briefcase-outline';
           } else if (route.name === 'Portfolio') {
             iconName = focused ? 'pie-chart' : 'pie-chart-outline';
-          } else if (route.name === 'Chat') {
-            iconName = focused ? 'chatbubble' : 'chatbubble-outline';
           } else if (route.name === 'Profile') {
             iconName = focused ? 'person' : 'person-outline';
           }
@@ -78,11 +73,6 @@ function MainTabs() {
         options={{ title: 'Portfolio' }}
       />
       <Tab.Screen 
-        name="Chat" 
-        component={ChatScreen} 
-        options={{ title: 'Chat' }}
-      />
-      <Tab.Screen 
         name="Profile" 
         component={ProfileScreen} 
         options={{ title: 'Profile' }}
@@ -94,35 +84,6 @@ function MainTabs() {
 // App Navigator - uses auth context
 function AppNavigator() {
   const { user, loading, isAuthenticated } = useAuth();
-  const [hasAcceptedTerms, setHasAcceptedTerms] = useState(false);
-
-  useEffect(() => {
-    checkTerms();
-  }, []);
-
-  useEffect(() => {
-    // Check actor health on app start
-    initializeActorHealth();
-  }, []);
-
-  const checkTerms = async () => {
-    try {
-      const termsAccepted = await AsyncStorage.getItem('termsAccepted');
-      setHasAcceptedTerms(termsAccepted === 'true');
-    } catch (error) {
-      console.error('Error checking terms:', error);
-    }
-  };
-
-  const handleTermsAccept = async () => {
-    try {
-      await AsyncStorage.setItem('termsAccepted', 'true');
-      await AsyncStorage.setItem('termsVersion', '1.0.0');
-      setHasAcceptedTerms(true);
-    } catch (error) {
-      console.error('Error saving terms:', error);
-    }
-  };
 
   if (loading) {
     return (
@@ -141,12 +102,6 @@ function AppNavigator() {
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="Register" component={RegisterScreen} />
         </>
-      ) : !hasAcceptedTerms ? (
-        // Logged in but hasn't accepted terms
-        <Stack.Screen 
-          name="Terms" 
-          component={TermsScreen}
-        />
       ) : (
         // Fully logged in
         <>
@@ -165,7 +120,7 @@ function AppNavigator() {
           />
           <Stack.Screen 
             name="Chat" 
-            component={ChatScreen} 
+            component={ChatScreen}
             options={{ 
               headerShown: true,
               headerStyle: {
@@ -173,18 +128,6 @@ function AppNavigator() {
               },
               headerTintColor: '#fff',
               title: 'Chat'
-            }}
-          />
-          <Stack.Screen 
-            name="CreateDeal" 
-            component={CreateDealScreen} 
-            options={{ 
-              headerShown: true,
-              headerStyle: {
-                backgroundColor: '#2563eb',
-              },
-              headerTintColor: '#fff',
-              title: 'Create Deal'
             }}
           />
         </>

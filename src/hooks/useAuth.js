@@ -14,32 +14,34 @@ export const AuthProvider = ({ children }) => {
     loadUser();
   }, []);
 
-  // Add debug logs whenever token or user changes
-  useEffect(() => {
-    console.log('🔑 Current token:', token ? token.substring(0, 20) + '...' : 'No token');
-    console.log('👤 Current user:', user ? { id: user.id, email: user.email, username: user.username } : 'No user');
-  }, [token, user]);
-
   const loadUser = async () => {
     try {
+      console.log('📦 Loading user from storage...');
       const storedToken = await AsyncStorage.getItem('userToken');
       const userData = await AsyncStorage.getItem('userData');
       
-      console.log('📦 Loading user from storage...');
-      console.log('📦 Stored token exists:', !!storedToken);
-      console.log('📦 Stored user data exists:', !!userData);
+      console.log(`📦 Stored token exists: ${!!storedToken}`);
+      console.log(`📦 Stored user exists: ${!!userData}`);
       
       if (storedToken && userData) {
+        console.log('📦 Found stored session, restoring...');
         setToken(storedToken);
         setUser(JSON.parse(userData));
         axios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
         console.log('✅ User session restored');
-        console.log('🔑 Token restored:', storedToken.substring(0, 20) + '...');
       } else {
         console.log('⚠️ No stored session found');
+        // Clear any invalid state
+        setToken(null);
+        setUser(null);
+        delete axios.defaults.headers.common['Authorization'];
       }
     } catch (error) {
       console.error('Error loading user:', error);
+      // Clear invalid state
+      setToken(null);
+      setUser(null);
+      delete axios.defaults.headers.common['Authorization'];
     } finally {
       setLoading(false);
     }
@@ -62,21 +64,22 @@ export const AuthProvider = ({ children }) => {
         
         console.log('💾 Storing token and user data...');
         
-        // Store token with the correct key name
+        // Store both token and user data
         await AsyncStorage.setItem('userToken', userToken);
         await AsyncStorage.setItem('userData', JSON.stringify(userData));
         
-        // Verify storage
-        const verifyToken = await AsyncStorage.getItem('userToken');
-        console.log('✅ Token stored successfully, length:', verifyToken?.length);
+        // Verify storage worked
+        const savedToken = await AsyncStorage.getItem('userToken');
+        console.log(`✅ Token stored successfully, length: ${savedToken?.length || 0}`);
         
+        // Update state
         setToken(userToken);
         setUser(userData);
         axios.defaults.headers.common['Authorization'] = `Bearer ${userToken}`;
         
         console.log('✅ Login successful, token stored');
-        console.log('🔑 Token stored:', userToken.substring(0, 20) + '...');
-        console.log('👤 User stored:', { id: userData.id, email: userData.email, username: userData.username });
+        console.log(`🔑 Token stored: ${userToken.substring(0, 20)}...`);
+        console.log(`👤 User stored: ${JSON.stringify(userData)}`);
         
         return { success: true, user: userData };
       }
@@ -112,6 +115,7 @@ export const AuthProvider = ({ children }) => {
 
   const logout = async () => {
     try {
+      console.log('🔄 Logging out...');
       await AsyncStorage.removeItem('userToken');
       await AsyncStorage.removeItem('userData');
       

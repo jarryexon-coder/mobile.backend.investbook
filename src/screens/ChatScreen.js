@@ -16,11 +16,13 @@ import axios from 'axios';
 import { io } from 'socket.io-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { EXPO_PUBLIC_API_URL } from '@env';
+import { useAuth } from '../hooks/useAuth';
 
 const API_URL = EXPO_PUBLIC_API_URL;
 
 export default function ChatScreen({ route, navigation }) {
   const { dealId, dealTitle, userId } = route.params || {};
+  const { token, user } = useAuth();
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
@@ -66,7 +68,6 @@ export default function ChatScreen({ route, navigation }) {
 
   const setupWebSocket = async () => {
     try {
-      const token = await AsyncStorage.getItem('userToken');
       const socketUrl = API_URL.replace('/api', '');
       
       console.log('🔗 Connecting to WebSocket at:', socketUrl);
@@ -115,14 +116,13 @@ export default function ChatScreen({ route, navigation }) {
   const fetchMessages = async () => {
     try {
       setLoading(true);
-      const token = await AsyncStorage.getItem('userToken');
       
       if (!token) {
-        console.log('⚠️ No token found, redirecting to login');
+        console.log('⚠️ No token available');
         Alert.alert(
           'Login Required',
           'Please login to access chat.',
-          [{ text: 'Login', onPress: () => navigation.navigate('Login') }]
+          [{ text: 'OK' }]
         );
         setLoading(false);
         return;
@@ -141,12 +141,7 @@ export default function ChatScreen({ route, navigation }) {
     } catch (error) {
       console.log('⚠️ Error fetching messages:', error.message);
       if (error.response?.status === 401) {
-        console.log('🔑 Authentication required');
-        Alert.alert(
-          'Session Expired',
-          'Please login again.',
-          [{ text: 'Login', onPress: () => navigation.navigate('Login') }]
-        );
+        Alert.alert('Session Expired', 'Please login again.');
       } else if (error.response?.status === 404) {
         console.log('📭 No messages found for this deal yet');
         setMessages([]);
@@ -161,13 +156,15 @@ export default function ChatScreen({ route, navigation }) {
   // Sync the deal with the backend
   const syncDealWithBackend = async () => {
     try {
-      const token = await AsyncStorage.getItem('userToken');
       if (!token) {
         console.log('❌ No token available for sync');
+        Alert.alert('Login Required', 'Please login to sync this deal.');
         return false;
       }
       
       console.log('🔄 Syncing deal with backend...');
+      console.log('🔑 Token length:', token.length);
+      
       const response = await axios.post(
         `${API_URL}/deals/sync`,
         {
@@ -188,6 +185,8 @@ export default function ChatScreen({ route, navigation }) {
         }
       );
       
+      console.log('📊 Sync response:', response.data);
+      
       if (response.data.success) {
         const newDealId = response.data.deal.id;
         console.log(`✅ Deal synced successfully with ID: ${newDealId}`);
@@ -201,6 +200,17 @@ export default function ChatScreen({ route, navigation }) {
         console.log('📊 Status:', error.response.status);
         console.log('📊 Data:', error.response.data);
       }
+      if (error.response?.status === 401) {
+        Alert.alert(
+          'Session Expired',
+          'Please login again.',
+          [{ text: 'Login', onPress: () => navigation.navigate('Login') }]
+        );
+      } else if (error.response?.status === 403) {
+        Alert.alert('Access Denied', 'You don\'t have permission to create deals.');
+      } else {
+        Alert.alert('Error', 'Failed to sync deal. Please try again later.');
+      }
       return false;
     }
   };
@@ -213,7 +223,6 @@ export default function ChatScreen({ route, navigation }) {
     }
 
     try {
-      const token = await AsyncStorage.getItem('userToken');
       if (!token) {
         Alert.alert('Login Required', 'Please login to send messages.');
         return;
@@ -268,7 +277,7 @@ export default function ChatScreen({ route, navigation }) {
   };
 
   const renderMessage = ({ item }) => {
-    const isOwnMessage = item.user_id === userId;
+    const isOwnMessage = item.user_id === userId || item.user_id === user?.id;
     return (
       <View style={[styles.messageContainer, isOwnMessage ? styles.ownMessage : styles.otherMessage]}>
         {!isOwnMessage && (
