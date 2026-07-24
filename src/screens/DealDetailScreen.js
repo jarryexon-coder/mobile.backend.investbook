@@ -14,8 +14,8 @@ import { useAuth } from '../hooks/useAuth';
 
 export default function DealDetailScreen({ route, navigation }) {
   const { deal } = route.params || {};
-  const [loading, setLoading] = useState(!deal);
   const { user } = useAuth();
+  const [loading, setLoading] = useState(!deal);
 
   useEffect(() => {
     if (deal) {
@@ -106,8 +106,6 @@ export default function DealDetailScreen({ route, navigation }) {
                      deal.source === 'Mock Data' ||
                      (deal.id && typeof deal.id === 'string' && deal.id.startsWith('mock-'));
 
-  const isMockDeal = deal.id && typeof deal.id === 'string' && deal.id.startsWith('mock-');
-
   // Get image
   const imageUrl = getImageUrl(deal);
 
@@ -121,15 +119,9 @@ export default function DealDetailScreen({ route, navigation }) {
   const propertyFacts = deal.details?.propertyFacts || deal.propertyFacts || null;
 
   // Check if this has a valid ID for chat
-  const hasValidId = deal.id && 
-                    typeof deal.id === 'string' && 
-                    !deal.id.startsWith('mock-') &&
-                    !deal.id.startsWith('item-');
-
+  const hasValidId = deal.id && typeof deal.id === 'string' && !deal.id.startsWith('mock-');
   const hasPropertyId = deal.propertyId || deal.listing_id;
   const canChat = hasValidId || hasPropertyId || deal.hasValidId;
-
-  // Get the ID to use for chat
   const chatId = deal.id || deal.propertyId || deal.listing_id;
 
   return (
@@ -281,19 +273,18 @@ export default function DealDetailScreen({ route, navigation }) {
           </TouchableOpacity>
         ) : null}
 
-        {/* Chat Button - Show for all items with valid IDs */}
-        {canChat && chatId && !isMockDeal && (
+        {/* Chat Button - Show for all listings with valid IDs */}
+        {canChat && chatId && (
           <TouchableOpacity
             style={styles.chatButton}
             onPress={() => {
-              // Use the property ID as the deal ID for sync
-              const dealId = deal.propertyId || deal.id || String(chatId);
+              const dealIdToUse = deal.propertyId || deal.id || String(chatId);
               navigation.navigate('Chat', { 
-                dealId: String(dealId),
+                dealId: String(dealIdToUse),
                 dealTitle: deal.title || 'Deal',
-                price: deal.price || 0,
-                location: getLocation(deal) || '',
-                propertyType: getPropertyType(deal) || 'Commercial',
+                price: deal.price,
+                location: getLocation(deal),
+                propertyType: getPropertyType(deal),
                 userId: user?.id
               });
             }}

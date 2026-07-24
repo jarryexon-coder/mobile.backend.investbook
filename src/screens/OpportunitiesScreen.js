@@ -17,23 +17,8 @@ import { fetchAllOpportunities } from '../services/scraperService';
 
 // Format price with full numbers and commas (no abbreviations)
 const formatPrice = (price) => {
-  if (!price || price === 0 || price === '0' || price === 'N/A') return 'Price Not Disclosed';
+  if (!price || price === 0) return 'N/A';
   
-  // If price is a string, try to parse it
-  if (typeof price === 'string') {
-    // Remove currency symbols and commas
-    const cleaned = price.replace(/[$€£,]/g, '').trim();
-    const num = parseFloat(cleaned);
-    if (!isNaN(num) && num > 0) {
-      return `$${num.toLocaleString('en-US', {
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0,
-      })}`;
-    }
-    return price;
-  }
-  
-  // If price is a number, format it
   if (typeof price === 'number') {
     return `$${price.toLocaleString('en-US', {
       minimumFractionDigits: 0,
@@ -41,51 +26,40 @@ const formatPrice = (price) => {
     })}`;
   }
   
-  return 'Price Not Disclosed';
+  const numPrice = parseFloat(String(price).replace(/[$,]/g, ''));
+  if (isNaN(numPrice) || numPrice === 0) return 'N/A';
+  
+  return `$${numPrice.toLocaleString('en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  })}`;
 };
 
 // Helper to get display title
 const getDisplayTitle = (item) => {
-  // Try all possible title fields
-  if (item.title && item.title !== 'Property Listing' && !item.title.includes('undefined')) 
-    return item.title;
+  if (item.title && item.title !== 'undefined') return item.title;
   if (item.name && item.name !== 'undefined') return item.name;
   if (item.listingName && item.listingName !== 'undefined') return item.listingName;
   if (item.address && item.address !== 'undefined') {
-    // If address is available, use it as title
     const addr = item.address;
     if (addr.includes(',')) {
       return addr.split(',')[0].trim();
     }
     return addr;
   }
-  if (item.listing_title && item.listing_title !== 'undefined') return item.listing_title;
-  if (item.business_name && item.business_name !== 'undefined') return item.business_name;
-  
-  // For LoopNet data, try to construct a title from available fields
-  if (item.propertyType && item.propertyType !== 'undefined') {
-    return `${item.propertyType} Property`;
-  }
-  if (item.category && item.category !== 'undefined') {
-    return `${item.category} Business`;
-  }
   if (item.city && item.state) {
     return `Property in ${item.city}, ${item.state}`;
   }
-  
   return 'Property Listing';
 };
 
 // Helper to get display location
 const getDisplayLocation = (item) => {
-  // Try all possible location fields
   if (item.location && item.location !== 'undefined') return item.location;
   if (item.address && item.address !== 'undefined') return item.address;
   if (item.city && item.state) return `${item.city}, ${item.state}`;
   if (item.city && item.city !== 'undefined') return item.city;
   if (item.state && item.state !== 'undefined') return item.state;
-  if (item.country && item.country !== 'undefined') return item.country;
-  
   return 'Location N/A';
 };
 
@@ -174,17 +148,47 @@ export default function OpportunitiesScreen({ navigation }) {
     fetchOpportunities(searchLocation);
   };
 
-  const applyFilters = (items) => {
-    let filtered = [...items];
+  // Sort listings: real first, mock/sample last
+  const sortListings = (items) => {
+    return [...items].sort((a, b) => {
+      // Check if item is real
+      const isRealA = a.propertyId || a.listing_id || 
+                     (a.id && typeof a.id === 'string' && !a.id.startsWith('mock-') && !a.id.startsWith('prop-'));
+      const isRealB = b.propertyId || b.listing_id || 
+                     (b.id && typeof b.id === 'string' && !b.id.startsWith('mock-') && !b.id.startsWith('prop-'));
+      
+      if (isRealA && !isRealB) return -1;
+      if (!isRealA && isRealB) return 1;
+      
+      // If both are real or both are mock, check source
+      const isSampleA = a.source === 'Sample Data' || a.source === 'Mock Data';
+      const isSampleB = b.source === 'Sample Data' || b.source === 'Mock Data';
+      
+      if (!isSampleA && isSampleB) return -1;
+      if (isSampleA && !isSampleB) return 1;
+      
+      return 0;
+    });
+  };
+
+  // Filter items based on active tab and filters
+  const getFilteredItems = () => {
+    let allItems = [...(opportunities.businesses || []), ...(opportunities.realEstate || [])];
+    
+    if (activeTab === 'businesses') {
+      allItems = opportunities.businesses || [];
+    } else if (activeTab === 'realestate') {
+      allItems = opportunities.realEstate || [];
+    }
     
     // Filter by type
     if (filterType === 'business') {
-      filtered = filtered.filter(item => 
+      allItems = allItems.filter(item => 
         item.category || item.cashFlow || item.revenue || 
         (item.source && item.source.includes('Business'))
       );
     } else if (filterType === 'property') {
-      filtered = filtered.filter(item => 
+      allItems = allItems.filter(item => 
         item.propertyType || item.address || item.size || 
         (item.source && item.source.includes('Property'))
       );
@@ -194,48 +198,46 @@ export default function OpportunitiesScreen({ navigation }) {
     const min = parseFloat(minPrice);
     const max = parseFloat(maxPrice);
     if (!isNaN(min) && min > 0) {
-      filtered = filtered.filter(item => (item.price || item.priceNumeric || 0) >= min);
+      allItems = allItems.filter(item => (item.price || 0) >= min);
     }
     if (!isNaN(max) && max > 0) {
-      filtered = filtered.filter(item => (item.price || item.priceNumeric || 0) <= max);
+      allItems = allItems.filter(item => (item.price || 0) <= max);
     }
     
-    // Sort
+    // Sort: real listings first, then mock/sample
+    allItems = sortListings(allItems);
+    
+    // Apply sort order
     switch (sortBy) {
       case 'price_asc':
-        filtered.sort((a, b) => (a.price || a.priceNumeric || 0) - (b.price || b.priceNumeric || 0));
+        allItems.sort((a, b) => (a.price || 0) - (b.price || 0));
         break;
       case 'price_desc':
-        filtered.sort((a, b) => (b.price || b.priceNumeric || 0) - (a.price || a.priceNumeric || 0));
+        allItems.sort((a, b) => (b.price || 0) - (a.price || 0));
         break;
       case 'date_desc':
-        filtered.sort((a, b) => {
+        allItems.sort((a, b) => {
           const dateA = a.created_at || a.fetchedAt || a.details?.fetchedAt || '';
           const dateB = b.created_at || b.fetchedAt || b.details?.fetchedAt || '';
           return dateB.localeCompare(dateA);
         });
         break;
       case 'date_asc':
-        filtered.sort((a, b) => {
+        allItems.sort((a, b) => {
           const dateA = a.created_at || a.fetchedAt || a.details?.fetchedAt || '';
           const dateB = b.created_at || b.fetchedAt || b.details?.fetchedAt || '';
           return dateA.localeCompare(dateB);
         });
         break;
       default:
+        // Keep sorted order (real first)
         break;
     }
     
-    return filtered;
+    return allItems;
   };
 
-  // Get all items and apply filters
-  const getAllItems = () => {
-    const allItems = [...(opportunities.businesses || []), ...(opportunities.realEstate || [])];
-    return applyFilters(allItems);
-  };
-
-  const filteredItems = getAllItems();
+  const filteredItems = getFilteredItems();
 
   // Smart detection
   const getListingType = (item) => {
@@ -269,14 +271,16 @@ export default function OpportunitiesScreen({ navigation }) {
   };
 
   const renderItem = ({ item }) => {
-    // Try to get the best price display
+    // Get the best price display
     let displayPrice = item.priceDisplay || formatPrice(item.price);
     
-    // If still no price, check for priceText or other fields
     if (!displayPrice || displayPrice === 'N/A' || displayPrice === 'Price Not Disclosed') {
-      if (item.priceText) displayPrice = item.priceText;
+      if (item.priceText && item.priceText !== 'None') displayPrice = item.priceText;
       else if (item.formattedPrice) displayPrice = item.formattedPrice;
       else if (item.priceNumeric) displayPrice = `$${item.priceNumeric.toLocaleString()}`;
+      else if (item.price && typeof item.price === 'number') displayPrice = `$${item.price.toLocaleString()}`;
+      else if (item.country === 'GB' || item.region === 'London') displayPrice = '£ Price on Request';
+      else if (item.listingType === 'For Lease' || item.listingType === 'For Rent') displayPrice = 'Lease - Price on Request';
       else displayPrice = 'Price Not Disclosed';
     }
     
@@ -285,19 +289,13 @@ export default function OpportunitiesScreen({ navigation }) {
     const title = getDisplayTitle(item);
     const location = getDisplayLocation(item);
     
-    // Check if this has a valid ID for chat
-    const hasValidId = item.id && 
-                      typeof item.id === 'string' && 
-                      !item.id.startsWith('mock-') &&
-                      !item.id.startsWith('item-') &&
-                      item.hasValidId !== false;
-    
-    // For cached items from LoopNet, they should have propertyId
-    const hasPropertyId = item.propertyId || item.listing_id;
-    const canChat = hasValidId || hasPropertyId;
+    // Check if this is a real listing
+    const isReal = item.propertyId || item.listing_id || 
+                  (item.id && typeof item.id === 'string' && !item.id.startsWith('mock-') && !item.id.startsWith('prop-'));
+    const isSampleData = item.source === 'Sample Data' || item.source === 'Mock Data';
     
     return (
-      <View style={styles.card}>
+      <View style={[styles.card, !isReal && styles.mockCard]}>
         <TouchableOpacity
           style={styles.cardContent}
           onPress={() => navigation.navigate('DealDetail', { deal: item })}
@@ -320,7 +318,7 @@ export default function OpportunitiesScreen({ navigation }) {
             </View>
             <View style={styles.sourceBadge}>
               <Text style={styles.sourceText}>
-                {item.source || 'Listing'}
+                {isReal ? '🔹 Real' : '📊 Sample'}
               </Text>
             </View>
           </View>
@@ -329,14 +327,7 @@ export default function OpportunitiesScreen({ navigation }) {
             📍 {location}
           </Text>
           
-          {/* Show chat badge for items that support chat */}
-          {canChat && (
-            <View style={styles.chatBadge}>
-              <Text style={styles.chatBadgeText}>💬 Chat available</Text>
-            </View>
-          )}
-          
-          {item.source === 'Sample Data' && (
+          {isSampleData && !isReal && (
             <View style={styles.mockBadge}>
               <Text style={styles.mockBadgeText}>📊 Sample Data</Text>
             </View>
@@ -364,7 +355,6 @@ export default function OpportunitiesScreen({ navigation }) {
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false}>
-            {/* Sort By */}
             <View style={styles.filterSection}>
               <Text style={styles.filterLabel}>Sort By</Text>
               <View style={styles.filterOptions}>
@@ -390,7 +380,6 @@ export default function OpportunitiesScreen({ navigation }) {
               </View>
             </View>
 
-            {/* Type Filter */}
             <View style={styles.filterSection}>
               <Text style={styles.filterLabel}>Type</Text>
               <View style={styles.filterOptions}>
@@ -416,7 +405,6 @@ export default function OpportunitiesScreen({ navigation }) {
               </View>
             </View>
 
-            {/* Price Range */}
             <View style={styles.filterSection}>
               <Text style={styles.filterLabel}>Price Range</Text>
               <View style={styles.priceRangeContainer}>
@@ -438,7 +426,6 @@ export default function OpportunitiesScreen({ navigation }) {
               </View>
             </View>
 
-            {/* Apply & Reset Buttons */}
             <View style={styles.modalActions}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.resetButton]}
@@ -489,7 +476,6 @@ export default function OpportunitiesScreen({ navigation }) {
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
       <View style={styles.container}>
-        {/* Search Bar */}
         <View style={styles.searchContainer}>
           <TextInput
             style={styles.searchInput}
@@ -502,18 +488,8 @@ export default function OpportunitiesScreen({ navigation }) {
           <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
             <Text style={styles.searchButtonText}>🔍</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.searchButton, styles.refreshButton]} 
-            onPress={() => {
-              console.log('🔄 Manual refresh triggered');
-              fetchOpportunities(searchLocation);
-            }}
-          >
-            <Text style={styles.searchButtonText}>🔄</Text>
-          </TouchableOpacity>
         </View>
 
-        {/* Filter Bar */}
         <View style={styles.filterBar}>
           <TouchableOpacity
             style={styles.filterButton}
@@ -531,10 +507,8 @@ export default function OpportunitiesScreen({ navigation }) {
           </Text>
         </View>
 
-        {/* Filter Modal */}
         <FilterModal />
 
-        {/* Results Count */}
         <View style={styles.resultCountContainer}>
           <Text style={styles.resultCountText}>
             Showing {filteredItems.length} results
@@ -544,7 +518,6 @@ export default function OpportunitiesScreen({ navigation }) {
           </Text>
         </View>
 
-        {/* List */}
         <FlatList
           data={filteredItems}
           renderItem={renderItem}
@@ -602,10 +575,6 @@ const styles = StyleSheet.create({
   searchButtonText: {
     fontSize: 18,
     color: 'white',
-  },
-  refreshButton: {
-    backgroundColor: '#10b981',
-    marginLeft: 4,
   },
   filterBar: {
     flexDirection: 'row',
@@ -670,6 +639,11 @@ const styles = StyleSheet.create({
     elevation: 2,
     overflow: 'hidden',
   },
+  mockCard: {
+    opacity: 0.8,
+    borderWidth: 1,
+    borderColor: '#f0f0f0',
+  },
   cardContent: {
     padding: 14,
   },
@@ -700,6 +674,7 @@ const styles = StyleSheet.create({
   typeContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
   },
   cardType: {
     fontSize: 13,
@@ -723,18 +698,6 @@ const styles = StyleSheet.create({
   sourceText: {
     fontSize: 10,
     color: '#666',
-  },
-  chatBadge: {
-    marginTop: 6,
-    backgroundColor: '#d1fae5',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-    alignSelf: 'flex-start',
-  },
-  chatBadgeText: {
-    fontSize: 10,
-    color: '#065f46',
   },
   mockBadge: {
     marginTop: 6,
@@ -804,7 +767,6 @@ const styles = StyleSheet.create({
     color: '#999',
     marginTop: 4,
   },
-  // Modal Styles
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',

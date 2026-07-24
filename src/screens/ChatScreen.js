@@ -32,20 +32,13 @@ export default function ChatScreen({ route, navigation }) {
   const [isSyncing, setIsSyncing] = useState(false);
   const flatListRef = useRef(null);
 
-  // Normalize the deal ID
   const chatDealId = dealId ? String(dealId) : null;
 
-  // Check if this is a mock deal
-  const isMockDeal = chatDealId && 
-                     (chatDealId.startsWith('mock-') || 
-                      chatDealId.startsWith('item-') ||
-                      chatDealId.startsWith('prop-'));
-
   useEffect(() => {
-    if (isMockDeal || !chatDealId) {
+    if (!chatDealId) {
       Alert.alert(
         'Chat Unavailable',
-        'Chat is only available for real listings.',
+        'No deal selected.',
         [{ text: 'Go Back', onPress: () => navigation.goBack() }]
       );
       setLoading(false);
@@ -133,7 +126,6 @@ export default function ChatScreen({ route, navigation }) {
         return;
       }
 
-      // Try using the original ID first
       let targetId = chatDealId;
       console.log(`📥 Fetching messages for deal ${targetId}...`);
       
@@ -148,11 +140,9 @@ export default function ChatScreen({ route, navigation }) {
         console.log(`✅ Fetched ${response.data?.length || 0} messages`);
       } catch (error) {
         if (error.response?.status === 404) {
-          // Try to sync the deal
           console.log('🔄 Deal not found, syncing...');
           const newId = await syncDealWithBackend();
           if (newId) {
-            // Try again with the new ID
             const response = await axios.get(`${API_URL}/deals/${newId}/messages`, {
               headers: { 
                 'Authorization': `Bearer ${token}`,
@@ -239,7 +229,6 @@ export default function ChatScreen({ route, navigation }) {
         return;
       }
 
-      // ✅ CRITICAL FIX: Use syncedDealId if available, otherwise use original
       const messageDealId = syncedDealId || chatDealId;
       console.log(`📤 Sending message to deal ID: ${messageDealId}`);
 
@@ -271,9 +260,7 @@ export default function ChatScreen({ route, navigation }) {
         const newId = await syncDealWithBackend();
         if (newId) {
           console.log(`✅ Synced with ID: ${newId}, retrying...`);
-          // ✅ CRITICAL FIX: Update syncedDealId before retrying
           setSyncedDealId(newId);
-          // Give state time to update
           setTimeout(() => {
             sendMessage();
           }, 300);
