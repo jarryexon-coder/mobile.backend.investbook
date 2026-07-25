@@ -31,14 +31,19 @@ export default function ChatScreen({ route, navigation }) {
   const [syncedDealId, setSyncedDealId] = useState(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const flatListRef = useRef(null);
+  const [reconnecting, setReconnecting] = useState(false);
 
   const chatDealId = dealId ? String(dealId) : null;
+  const isMockDeal = chatDealId && 
+                     (chatDealId.startsWith('mock-') || 
+                      chatDealId.startsWith('item-') ||
+                      chatDealId.startsWith('prop-'));
 
   useEffect(() => {
-    if (!chatDealId) {
+    if (isMockDeal || !chatDealId) {
       Alert.alert(
         'Chat Unavailable',
-        'No deal selected.',
+        'Chat is only available for real listings.',
         [{ text: 'Go Back', onPress: () => navigation.goBack() }]
       );
       setLoading(false);
@@ -68,29 +73,49 @@ export default function ChatScreen({ route, navigation }) {
     };
   }, [chatDealId, token]);
 
-  const setupWebSocket = async () => {
+  const setupWebSocket = () => {
     try {
       const socketUrl = API_URL.replace('/api', '');
-      
       console.log('🔗 Connecting to WebSocket at:', socketUrl);
       
       const newSocket = io(socketUrl, {
-        transports: ['websocket'],
-        query: { token },
+        transports: ['websocket', 'polling'],
+        timeout: 10000,
         reconnection: true,
-        reconnectionAttempts: 5,
+        reconnectionAttempts: 10,
         reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        query: { token },
+        forceNew: true,
       });
 
       newSocket.on('connect', () => {
         console.log('✅ WebSocket connected');
         setIsConnected(true);
+        setReconnecting(false);
         newSocket.emit('join_deal_chat', { deal_id: chatDealId });
       });
 
-      newSocket.on('disconnect', () => {
-        console.log('❌ WebSocket disconnected');
+      newSocket.on('connect_error', (error) => {
+        console.log('⚠️ WebSocket connection error:', error.message);
         setIsConnected(false);
+        setReconnecting(true);
+      });
+
+      newSocket.on('disconnect', (reason) => {
+        console.log('❌ WebSocket disconnected:', reason);
+        setIsConnected(false);
+        if (reason === 'io server disconnect') {
+          // Reconnect manually
+          setTimeout(() => {
+            console.log('🔄 Manual reconnection attempt...');
+            newSocket.connect();
+          }, 3000);
+        }
+      });
+
+      newSocket.on('error', (error) => {
+        console.log('⚠️ WebSocket error:', error);
       });
 
       newSocket.on('new_message', (data) => {
@@ -102,11 +127,6 @@ export default function ChatScreen({ route, navigation }) {
             flatListRef.current?.scrollToEnd({ animated: true });
           }, 100);
         }
-      });
-
-      newSocket.on('connect_error', (error) => {
-        console.log('⚠️ WebSocket connection error:', error.message);
-        setIsConnected(false);
       });
 
       setSocket(newSocket);
@@ -165,18 +185,21 @@ export default function ChatScreen({ route, navigation }) {
     }
   };
 
-  // 🔥 UPDATED: Enhanced syncDealWithBackend function with proper token handling
   const syncDealWithBackend = async () => {
     try {
-      const token = await AsyncStorage.getItem('userToken');
       if (!token) {
         console.log('❌ No token available for sync');
-        Alert.alert('Login Required', 'Please login to sync this deal.');
         return false;
       }
       
+      if (isSyncing) {
+        console.log('⏳ Already syncing, please wait...');
+        return false;
+      }
+      
+      setIsSyncing(true);
       console.log('🔄 Syncing deal with backend...');
-      console.log(`🔑 Token length: ${token.length}`);
+      console.log(`🔑 Token length: ${token?.length || 0}`);
       
       const response = await axios.post(
         `${API_URL}/deals/sync`,
@@ -184,29 +207,30 @@ export default function ChatScreen({ route, navigation }) {
           dealId: chatDealId,
           dealData: {
             title: dealTitle || 'Property Listing',
-            price: route.params?.price || 0,
-            location: route.params?.location || '',
-            propertyType: route.params?.propertyType || 'Commercial'
+            price: price || 0,
+            location: location || '',
+            propertyType: propertyType || 'Commercial'
           }
         },
         { 
           headers: { 
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
-          },
-          timeout: 10000
+          } 
         }
       );
       
-      console.log('📊 Sync response:', response.data);
+      setIsSyncing(false);
       
       if (response.data.success) {
-        console.log('✅ Deal synced successfully');
-        setSyncedDealId(response.data.deal.id);
-        return response.data.deal.id;
+        const newDealId = response.data.deal.id;
+        console.log(`✅ Deal synced successfully with ID: ${newDealId}`);
+        setSyncedDealId(newDealId);
+        return newDealId;
       }
       return false;
     } catch (error) {
+      setIsSyncing(false);
       console.log('❌ Failed to sync deal:', error.message);
       if (error.response?.status === 401) {
         Alert.alert('Session Expired', 'Please login again.', [
@@ -219,8 +243,20 @@ export default function ChatScreen({ route, navigation }) {
 
   const sendMessage = async () => {
     if (!inputText.trim()) return;
+    
     if (!isConnected) {
-      Alert.alert('Not Connected', 'Please wait while we reconnect to the chat server.');
+      console.log('⚠️ Not connected, attempting to reconnect...');
+      if (socket) {
+        socket.connect();
+        // Wait a moment for reconnection
+        setTimeout(async () => {
+          if (isConnected) {
+            await sendMessage();
+          } else {
+            Alert.alert('Connection Error', 'Unable to connect to chat server. Please try again.');
+          }
+        }, 2000);
+      }
       return;
     }
 

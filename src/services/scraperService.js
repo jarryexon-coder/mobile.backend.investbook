@@ -572,24 +572,65 @@ export const fetchAllOpportunities = async (searchParams = {}) => {
         const data = await scrapeBizBuySell(keyword, searchLocation, searchState, Math.min(limit, 50));
         
         if (data && data.length > 0) {
-            // 🔥 UPDATED: Simplified classification logic
+            // 🔥 IMPROVED CLASSIFICATION: Better separation of businesses and properties
             const businesses = [];
             const properties = [];
             
             data.forEach(item => {
-                // If it has property fields, treat as property
-                if (item.propertyType || item.address || item.size || item.lotSize) {
+                // Check if it has property-specific fields
+                const isProperty = item.propertyType || 
+                                   item.address || 
+                                   item.size || 
+                                   item.lotSize || 
+                                   item.buildingSize ||
+                                   item.totalSize ||
+                                   item.propertyId ||
+                                   (item.source && item.source.includes('Property')) ||
+                                   (item.title && (
+                                       item.title.includes('Building') || 
+                                       item.title.includes('Property') || 
+                                       item.title.includes('Land') ||
+                                       item.title.includes('Warehouse') ||
+                                       item.title.includes('Office') ||
+                                       item.title.includes('Retail') ||
+                                       item.title.includes('Commercial') ||
+                                       item.title.includes('Industrial')
+                                   ));
+                
+                // Check if it has business-specific fields
+                const isBusiness = item.category || 
+                                   item.cashFlow || 
+                                   item.revenue || 
+                                   item.ebitda ||
+                                   item.broker ||
+                                   (item.source && item.source.includes('Business')) ||
+                                   (item.title && (
+                                       item.title.includes('Business') || 
+                                       item.title.includes('Company') || 
+                                       item.title.includes('Agency') ||
+                                       item.title.includes('Franchise') ||
+                                       item.title.includes('for Sale') && item.buildingSize
+                                   ));
+                
+                // Classify based on what's available
+                if (isProperty && !isBusiness) {
                     properties.push(item);
-                }
-                // If it has business fields, treat as business
-                else if (item.category || item.cashFlow || item.revenue) {
+                } else if (isBusiness && !isProperty) {
                     businesses.push(item);
-                }
-                // Default: treat as property if it has a price, otherwise business
-                else if (item.price || item.priceNumeric) {
-                    properties.push(item);
+                } else if (isProperty && isBusiness) {
+                    // If both, check which one is stronger
+                    if (item.propertyType || item.address) {
+                        properties.push(item);
+                    } else {
+                        businesses.push(item);
+                    }
                 } else {
-                    businesses.push(item);
+                    // Default: if it has a price, treat as property
+                    if (item.price || item.priceNumeric) {
+                        properties.push(item);
+                    } else {
+                        businesses.push(item);
+                    }
                 }
             });
             

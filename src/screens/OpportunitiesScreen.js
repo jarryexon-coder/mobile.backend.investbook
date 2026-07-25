@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,26 +12,28 @@ import {
   SafeAreaView,
   StatusBar,
   Modal,
+  Platform,
 } from 'react-native';
+import Icon from 'react-native-vector-icons/Ionicons';
 import { fetchAllOpportunities } from '../services/scraperService';
 
+// Improved price formatting - shows full numbers with commas
 const formatPrice = (price) => {
   if (!price || price === 0) return 'Price Not Disclosed';
   
-  // If it's a string, try to parse it
   if (typeof price === 'string') {
     const cleaned = price.replace(/[$€£,]/g, '').trim();
     const num = parseFloat(cleaned);
     if (!isNaN(num) && num > 0) {
-      price = num;
-    } else {
-      return price; // Return as-is if it's "Upon Request" etc.
+      return `$${num.toLocaleString('en-US', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      })}`;
     }
+    return price;
   }
   
-  // For numbers, format with full commas
   if (typeof price === 'number') {
-    // Show full price with commas
     return `$${price.toLocaleString('en-US', {
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
@@ -39,6 +41,23 @@ const formatPrice = (price) => {
   }
   
   return 'Price Not Disclosed';
+};
+
+// Sort: Listings with prices first, "Price Not Disclosed" at the bottom
+const sortListingsByPrice = (items) => {
+  return [...items].sort((a, b) => {
+    const hasPriceA = a.price && a.price > 0 && a.priceDisplay !== 'Price Not Disclosed';
+    const hasPriceB = b.price && b.price > 0 && b.priceDisplay !== 'Price Not Disclosed';
+    
+    if (hasPriceA && !hasPriceB) return -1;
+    if (!hasPriceA && hasPriceB) return 1;
+    
+    if (hasPriceA && hasPriceB) {
+      return (a.price || 0) - (b.price || 0);
+    }
+    
+    return 0;
+  });
 };
 
 // Helper to get display title
@@ -71,7 +90,6 @@ const getDisplayLocation = (item) => {
 
 // Filter options
 const SORT_OPTIONS = [
-  { label: 'Default Order', value: 'default' },
   { label: 'Price: Low to High', value: 'price_asc' },
   { label: 'Price: High to Low', value: 'price_desc' },
   { label: 'Newest First', value: 'date_desc' },
@@ -92,8 +110,7 @@ export default function OpportunitiesScreen({ navigation }) {
   const [searchLocation, setSearchLocation] = useState('');
   const [activeTab, setActiveTab] = useState('all');
   
-  // Filter states
-  const [sortBy, setSortBy] = useState('default');
+  const [sortBy, setSortBy] = useState('price_asc');
   const [filterType, setFilterType] = useState('all');
   const [showFilters, setShowFilters] = useState(false);
   const [minPrice, setMinPrice] = useState('');
@@ -154,30 +171,6 @@ export default function OpportunitiesScreen({ navigation }) {
     fetchOpportunities(searchLocation);
   };
 
-  // Sort listings: real first, mock/sample last
-  const sortListings = (items) => {
-    return [...items].sort((a, b) => {
-      // Check if item is real
-      const isRealA = a.propertyId || a.listing_id || 
-                     (a.id && typeof a.id === 'string' && !a.id.startsWith('mock-') && !a.id.startsWith('prop-'));
-      const isRealB = b.propertyId || b.listing_id || 
-                     (b.id && typeof b.id === 'string' && !b.id.startsWith('mock-') && !b.id.startsWith('prop-'));
-      
-      if (isRealA && !isRealB) return -1;
-      if (!isRealA && isRealB) return 1;
-      
-      // If both are real or both are mock, check source
-      const isSampleA = a.source === 'Sample Data' || a.source === 'Mock Data';
-      const isSampleB = b.source === 'Sample Data' || b.source === 'Mock Data';
-      
-      if (!isSampleA && isSampleB) return -1;
-      if (isSampleA && !isSampleB) return 1;
-      
-      return 0;
-    });
-  };
-
-  // Filter items based on active tab and filters
   const getFilteredItems = () => {
     let allItems = [...(opportunities.businesses || []), ...(opportunities.realEstate || [])];
     
@@ -187,7 +180,6 @@ export default function OpportunitiesScreen({ navigation }) {
       allItems = opportunities.realEstate || [];
     }
     
-    // Filter by type
     if (filterType === 'business') {
       allItems = allItems.filter(item => 
         item.category || item.cashFlow || item.revenue || 
@@ -200,7 +192,6 @@ export default function OpportunitiesScreen({ navigation }) {
       );
     }
     
-    // Filter by price range
     const min = parseFloat(minPrice);
     const max = parseFloat(maxPrice);
     if (!isNaN(min) && min > 0) {
@@ -210,10 +201,8 @@ export default function OpportunitiesScreen({ navigation }) {
       allItems = allItems.filter(item => (item.price || 0) <= max);
     }
     
-    // Sort: real listings first, then mock/sample
-    allItems = sortListings(allItems);
+    allItems = sortListingsByPrice(allItems);
     
-    // Apply sort order
     switch (sortBy) {
       case 'price_asc':
         allItems.sort((a, b) => (a.price || 0) - (b.price || 0));
@@ -236,16 +225,16 @@ export default function OpportunitiesScreen({ navigation }) {
         });
         break;
       default:
-        // Keep sorted order (real first)
         break;
     }
     
     return allItems;
   };
 
-  const filteredItems = getFilteredItems();
+const filteredItems = useMemo(() => {
+  return getFilteredItems();
+}, [opportunities, activeTab, filterType, sortBy, minPrice, maxPrice, searchLocation]);
 
-  // Smart detection
   const getListingType = (item) => {
     if (item.propertyType || item.address || item.lotSize || item.buildingSize || 
         item.size || (item.priceDisplay?.includes('M') && !item.category)) {
@@ -264,85 +253,93 @@ export default function OpportunitiesScreen({ navigation }) {
     return null;
   };
 
-  // Get sort label
   const getSortLabel = () => {
     const option = SORT_OPTIONS.find(o => o.value === sortBy);
     return option ? option.label : 'Sort';
   };
 
-  // Get type label
   const getTypeLabel = () => {
     const option = TYPE_OPTIONS.find(o => o.value === filterType);
     return option ? option.label : 'Type';
   };
 
-const renderItem = ({ item }) => {
-  // Get the best price display
-  let displayPrice = item.priceDisplay || formatPrice(item.price);
-  
-  // Check if price is "Not Disclosed" or "Upon Request" or similar
-  const isPriceNotDisclosed = !item.price || 
-                              item.price === 0 || 
-                              displayPrice === 'Price Not Disclosed' ||
-                              displayPrice === 'N/A' ||
-                              displayPrice === 'Upon Request' ||
-                              displayPrice === 'Price on Request';
-  
-  // If price is not disclosed or we have no price, try alternative fields
-  if (isPriceNotDisclosed || !displayPrice || displayPrice === 'N/A' || displayPrice === 'Price Not Disclosed') {
-    if (item.priceText && item.priceText !== 'None') {
-      displayPrice = item.priceText;
-    } else if (item.formattedPrice) {
-      displayPrice = item.formattedPrice;
-    } else if (item.priceNumeric) {
-      displayPrice = `$${item.priceNumeric.toLocaleString()}`;
-    } else if (item.price && typeof item.price === 'number') {
-      displayPrice = `$${item.price.toLocaleString()}`;
-    } else if (item.country === 'GB' || item.region === 'London') {
-      displayPrice = '£ Price on Request';
-    } else if (item.listingType === 'For Lease' || item.listingType === 'For Rent') {
-      displayPrice = 'Lease - Price on Request';
-    } else {
-      displayPrice = 'Price Not Disclosed';
-    }
-  }
-          
-  const listingInfo = getListingType(item);
-  const subtype = getSubtype(item);
-  const title = getDisplayTitle(item);
-  const location = getDisplayLocation(item);
-        
-  return (
-    <View style={styles.card}>
-      <TouchableOpacity
-        style={styles.cardContent}
-        onPress={() => navigation.navigate('DealDetail', { deal: item })}
-      >
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle} numberOfLines={2}>
-            {title}
-          </Text>
-          <Text style={styles.cardPrice}>{displayPrice}</Text>
-        </View>
+  const renderItem = ({ item }) => {
+    let displayPrice = item.priceDisplay || formatPrice(item.price);
     
-        <View style={styles.cardDetails}>
-          <View style={styles.typeContainer}>
-            <Text style={styles.cardType}>
-              {listingInfo.emoji} {listingInfo.type}
+    const hasValidPrice = item.price && item.price > 0 && displayPrice !== 'Price Not Disclosed';
+    
+    const listingInfo = getListingType(item);
+    const subtype = getSubtype(item);
+    const title = getDisplayTitle(item);
+    const location = getDisplayLocation(item);
+    
+    // Check if this has a valid ID for chat
+    const isMockDeal = item.id && typeof item.id === 'string' && (item.id.startsWith('mock-') || item.id.startsWith('prop-'));
+    const isSampleData = item.source === 'Sample Data' || item.source === 'Mock Data';
+    const hasValidId = item.id && typeof item.id === 'string' && !item.id.startsWith('mock-') && !item.id.startsWith('prop-');
+    const hasPropertyId = item.propertyId || item.listing_id;
+    const canChat = (hasValidId || hasPropertyId || item.hasValidId) && !isMockDeal && !isSampleData;
+    
+    const chatId = item.id || item.propertyId || item.listing_id;
+    
+    return (
+      <View style={[styles.card, !hasValidPrice && styles.noPriceCard]}>
+        <TouchableOpacity
+          style={styles.cardContent}
+          onPress={() => navigation.navigate('DealDetail', { deal: item })}
+        >
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle} numberOfLines={2}>
+              {title}
             </Text>
-            {subtype && (
-              <Text style={styles.cardSubtype}> • {subtype}</Text>
-            )}
+            <Text style={[styles.cardPrice, !hasValidPrice && styles.noPrice]}>
+              {displayPrice}
+            </Text>
           </View>
-        </View>
-  
-        <Text style={styles.cardLocation}>  
-          📍 {location}
-        </Text>
-      </TouchableOpacity>
-    </View>
-  );
-};
+          
+          <View style={styles.cardDetails}>
+            <View style={styles.typeContainer}>
+              <Text style={styles.cardType}>
+                {listingInfo.emoji} {listingInfo.type}
+              </Text>
+              {subtype && (
+                <Text style={styles.cardSubtype}> • {subtype}</Text>
+              )}
+            </View>
+          </View>
+          
+          <Text style={styles.cardLocation}>
+            📍 {location}
+          </Text>
+          
+          {!hasValidPrice && (
+            <View style={styles.priceBadge}>
+              <Text style={styles.priceBadgeText}>💵 Price on Request</Text>
+            </View>
+          )}
+          
+          {/* Chat button on card */}
+          {canChat && chatId && (
+            <TouchableOpacity
+              style={styles.chatButtonOnCard}
+              onPress={() => {
+                navigation.navigate('Chat', { 
+                  dealId: String(chatId),
+                  dealTitle: item.title || 'Deal',
+                  price: item.price,
+                  location: location,
+                  propertyType: item.propertyType || item.category
+                });
+              }}
+            >
+              <Icon name="chatbubble-outline" size={14} color="#10b981" />
+              <Text style={styles.chatButtonOnCardText}>💬 Chat</Text>
+            </TouchableOpacity>
+          )}
+        </TouchableOpacity>
+      </View>
+    );
+  };
 
   // Filter Modal
   const FilterModal = () => (
@@ -437,7 +434,7 @@ const renderItem = ({ item }) => {
               <TouchableOpacity
                 style={[styles.modalButton, styles.resetButton]}
                 onPress={() => {
-                  setSortBy('default');
+                  setSortBy('price_asc');
                   setFilterType('all');
                   setMinPrice('');
                   setMaxPrice('');
@@ -503,7 +500,7 @@ const renderItem = ({ item }) => {
             onPress={() => setShowFilters(true)}
           >
             <Text style={styles.filterButtonText}>⚙️ Filters</Text>
-            {(sortBy !== 'default' || filterType !== 'all' || minPrice || maxPrice) && (
+            {(sortBy !== 'price_asc' || filterType !== 'all' || minPrice || maxPrice) && (
               <View style={styles.filterBadge}>
                 <Text style={styles.filterBadgeText}>•</Text>
               </View>
@@ -520,7 +517,7 @@ const renderItem = ({ item }) => {
           <Text style={styles.resultCountText}>
             Showing {filteredItems.length} results
             {searchLocation ? ` in ${searchLocation}` : ' nationwide'}
-            {sortBy !== 'default' && ` • ${getSortLabel()}`}
+            {sortBy !== 'price_asc' && ` • ${getSortLabel()}`}
             {filterType !== 'all' && ` • ${getTypeLabel()}`}
           </Text>
         </View>
@@ -550,11 +547,12 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#f5f5f5',
+    paddingTop: Platform.OS === 'ios' ? 0 : 0,
   },
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
-    paddingTop: 8,
+    paddingTop: 4,
   },
   searchContainer: {
     flexDirection: 'row',
@@ -588,20 +586,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 6,
   },
   filterButton: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'white',
     paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingVertical: 6,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#ddd',
   },
   filterButtonText: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#333',
     fontWeight: '500',
   },
@@ -623,55 +621,64 @@ const styles = StyleSheet.create({
   },
   resultCountContainer: {
     paddingHorizontal: 16,
-    paddingVertical: 4,
+    paddingVertical: 2,
   },
   resultCountText: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#666',
     fontStyle: 'italic',
   },
   listContent: {
     paddingHorizontal: 16,
     paddingBottom: 20,
-    paddingTop: 4,
+    paddingTop: 2,
   },
   card: {
     backgroundColor: 'white',
-    borderRadius: 12,
-    marginBottom: 10,
+    borderRadius: 10,
+    marginBottom: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
-    shadowRadius: 4,
+    shadowRadius: 3,
     elevation: 2,
     overflow: 'hidden',
   },
+  noPriceCard: {
+    opacity: 0.7,
+    borderWidth: 1,
+    borderColor: '#f0f0f0',
+  },
   cardContent: {
-    padding: 14,
+    padding: 12,
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   cardTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
     color: '#1a1a1a',
     flex: 1,
     marginRight: 8,
   },
   cardPrice: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '700',
     color: '#2563eb',
+  },
+  noPrice: {
+    color: '#999',
+    fontSize: 12,
   },
   cardDetails: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   typeContainer: {
     flexDirection: 'row',
@@ -679,11 +686,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   cardType: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#666',
   },
   cardSubtype: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#888',
   },
   cardLocation: {
@@ -691,15 +698,33 @@ const styles = StyleSheet.create({
     color: '#999',
     marginTop: 2,
   },
-  sourceBadge: {
-    backgroundColor: '#f0f0f0',
+  priceBadge: {
+    marginTop: 4,
+    backgroundColor: '#fef3c7',
     paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: 10,
+    borderRadius: 4,
+    alignSelf: 'flex-start',
   },
-  sourceText: {
+  priceBadgeText: {
     fontSize: 10,
-    color: '#666',
+    color: '#92400e',
+  },
+  chatButtonOnCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    backgroundColor: '#f0fdf4',
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  chatButtonOnCardText: {
+    fontSize: 12,
+    color: '#10b981',
+    marginLeft: 4,
+    fontWeight: '500',
   },
   loadingContainer: {
     flex: 1,
