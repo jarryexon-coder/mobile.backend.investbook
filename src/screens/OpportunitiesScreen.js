@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -60,12 +60,13 @@ const sortListingsByPrice = (items) => {
   });
 };
 
-// Helper to get display title
+// Helper to get display title - safely handle undefined
 const getDisplayTitle = (item) => {
-  if (item.title && item.title !== 'undefined') return item.title;
-  if (item.name && item.name !== 'undefined') return item.name;
-  if (item.listingName && item.listingName !== 'undefined') return item.listingName;
-  if (item.address && item.address !== 'undefined') {
+  if (!item) return 'Property Listing';
+  if (item.title && typeof item.title === 'string' && item.title !== 'undefined') return item.title;
+  if (item.name && typeof item.name === 'string' && item.name !== 'undefined') return item.name;
+  if (item.listingName && typeof item.listingName === 'string' && item.listingName !== 'undefined') return item.listingName;
+  if (item.address && typeof item.address === 'string' && item.address !== 'undefined') {
     const addr = item.address;
     if (addr.includes(',')) {
       return addr.split(',')[0].trim();
@@ -78,13 +79,14 @@ const getDisplayTitle = (item) => {
   return 'Property Listing';
 };
 
-// Helper to get display location
+// Helper to get display location - safely handle undefined
 const getDisplayLocation = (item) => {
-  if (item.location && item.location !== 'undefined') return item.location;
-  if (item.address && item.address !== 'undefined') return item.address;
+  if (!item) return 'Location N/A';
+  if (item.location && typeof item.location === 'string' && item.location !== 'undefined') return item.location;
+  if (item.address && typeof item.address === 'string' && item.address !== 'undefined') return item.address;
   if (item.city && item.state) return `${item.city}, ${item.state}`;
-  if (item.city && item.city !== 'undefined') return item.city;
-  if (item.state && item.state !== 'undefined') return item.state;
+  if (item.city && typeof item.city === 'string' && item.city !== 'undefined') return item.city;
+  if (item.state && typeof item.state === 'string' && item.state !== 'undefined') return item.state;
   return 'Location N/A';
 };
 
@@ -171,7 +173,7 @@ export default function OpportunitiesScreen({ navigation }) {
     fetchOpportunities(searchLocation);
   };
 
-  const getFilteredItems = () => {
+  const getFilteredItems = useCallback(() => {
     let allItems = [...(opportunities.businesses || []), ...(opportunities.realEstate || [])];
     
     if (activeTab === 'businesses') {
@@ -229,13 +231,12 @@ export default function OpportunitiesScreen({ navigation }) {
     }
     
     return allItems;
-  };
+  }, [opportunities, activeTab, filterType, sortBy, minPrice, maxPrice]);
 
-const filteredItems = useMemo(() => {
-  return getFilteredItems();
-}, [opportunities, activeTab, filterType, sortBy, minPrice, maxPrice, searchLocation]);
+  const filteredItems = useMemo(() => getFilteredItems(), [getFilteredItems]);
 
   const getListingType = (item) => {
+    if (!item) return { type: 'Opportunity', emoji: '📋' };
     if (item.propertyType || item.address || item.lotSize || item.buildingSize || 
         item.size || (item.priceDisplay?.includes('M') && !item.category)) {
       return { type: 'Property', emoji: '🏢' };
@@ -247,6 +248,7 @@ const filteredItems = useMemo(() => {
   };
 
   const getSubtype = (item) => {
+    if (!item) return null;
     if (item.propertyType) return item.propertyType;
     if (item.category) return item.category;
     if (item.propertySubtype) return item.propertySubtype;
@@ -263,83 +265,119 @@ const filteredItems = useMemo(() => {
     return option ? option.label : 'Type';
   };
 
-  const renderItem = ({ item }) => {
-    let displayPrice = item.priceDisplay || formatPrice(item.price);
-    
-    const hasValidPrice = item.price && item.price > 0 && displayPrice !== 'Price Not Disclosed';
-    
-    const listingInfo = getListingType(item);
-    const subtype = getSubtype(item);
-    const title = getDisplayTitle(item);
-    const location = getDisplayLocation(item);
-    
-    // Check if this has a valid ID for chat
-    const isMockDeal = item.id && typeof item.id === 'string' && (item.id.startsWith('mock-') || item.id.startsWith('prop-'));
-    const isSampleData = item.source === 'Sample Data' || item.source === 'Mock Data';
-    const hasValidId = item.id && typeof item.id === 'string' && !item.id.startsWith('mock-') && !item.id.startsWith('prop-');
-    const hasPropertyId = item.propertyId || item.listing_id;
-    const canChat = (hasValidId || hasPropertyId || item.hasValidId) && !isMockDeal && !isSampleData;
-    
-    const chatId = item.id || item.propertyId || item.listing_id;
-    
-    return (
-      <View style={[styles.card, !hasValidPrice && styles.noPriceCard]}>
-        <TouchableOpacity
-          style={styles.cardContent}
-          onPress={() => navigation.navigate('DealDetail', { deal: item })}
-        >
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle} numberOfLines={2}>
-              {title}
-            </Text>
-            <Text style={[styles.cardPrice, !hasValidPrice && styles.noPrice]}>
-              {displayPrice}
-            </Text>
-          </View>
-          
-          <View style={styles.cardDetails}>
-            <View style={styles.typeContainer}>
-              <Text style={styles.cardType}>
-                {listingInfo.emoji} {listingInfo.type}
-              </Text>
-              {subtype && (
-                <Text style={styles.cardSubtype}> • {subtype}</Text>
-              )}
-            </View>
-          </View>
-          
-          <Text style={styles.cardLocation}>
-            📍 {location}
-          </Text>
-          
-          {!hasValidPrice && (
-            <View style={styles.priceBadge}>
-              <Text style={styles.priceBadgeText}>💵 Price on Request</Text>
-            </View>
-          )}
-          
-          {/* Chat button on card */}
-          {canChat && chatId && (
-            <TouchableOpacity
-              style={styles.chatButtonOnCard}
-              onPress={() => {
-                navigation.navigate('Chat', { 
-                  dealId: String(chatId),
-                  dealTitle: item.title || 'Deal',
-                  price: item.price,
-                  location: location,
-                  propertyType: item.propertyType || item.category
-                });
-              }}
-            >
-              <Icon name="chatbubble-outline" size={14} color="#10b981" />
-              <Text style={styles.chatButtonOnCardText}>💬 Chat</Text>
-            </TouchableOpacity>
-          )}
-        </TouchableOpacity>
-      </View>
-    );
+const renderItem = ({ item }) => {
+  // Safely get values with fallbacks
+  const displayPrice = item?.priceDisplay || formatPrice(item?.price) || 'Price Not Disclosed';
+  const hasValidPrice = item?.price && item.price > 0 && displayPrice !== 'Price Not Disclosed';
+  const listingInfo = getListingType(item);
+  const subtype = getSubtype(item);
+  const title = getDisplayTitle(item);
+  const location = getDisplayLocation(item);
+  
+  // Check if this has a valid ID for chat - safely
+  const isMockDeal = item?.id && typeof item.id === 'string' && (item.id.startsWith('mock-') || item.id.startsWith('prop-'));
+  const isSampleData = item?.source === 'Sample Data' || item?.source === 'Mock Data';
+  const hasValidId = item?.id && typeof item.id === 'string' && !item.id.startsWith('mock-') && !item.id.startsWith('prop-');
+  const hasPropertyId = item?.propertyId || item?.listing_id;
+  const canChat = (hasValidId || hasPropertyId || item?.hasValidId) && !isMockDeal && !isSampleData;
+  const chatId = item?.id || item?.propertyId || item?.listing_id;
+  
+  // SANITIZE THE DEAL DATA - Convert everything to safe strings/numbers
+  const safeDealData = {
+    id: String(item?.id || item?.propertyId || item?.listing_id || ''),
+    title: String(title || 'Property Listing'),
+    price: typeof item?.price === 'number' ? item.price : 0,
+    priceDisplay: String(displayPrice || 'Price Not Disclosed'),
+    location: String(location || ''),
+    address: String(item?.address || ''),
+    city: String(item?.city || ''),
+    state: String(item?.state || ''),
+    country: String(item?.country || ''),
+    propertyType: String(item?.propertyType || ''),
+    category: String(item?.category || ''),
+    source: String(item?.source || 'Listing'),
+    url: String(item?.url || ''),
+    description: String(item?.description || item?.summary || ''),
+    imageUrl: item?.imageUrl || item?.image || item?.photo || null,
+    broker: String(item?.broker || item?.brokerName || ''),
+    brokerPhone: String(item?.brokerPhone || item?.contact_phone || ''),
+    brokerEmail: String(item?.brokerEmail || ''),
+    size: String(item?.size || item?.totalSize || item?.buildingSize || ''),
+    lotSize: String(item?.lotSize || ''),
+    yearBuilt: String(item?.yearBuilt || ''),
+    cashFlow: typeof item?.cashFlow === 'number' ? item.cashFlow : 0,
+    revenue: typeof item?.revenue === 'number' ? item.revenue : 0,
+    ebitda: typeof item?.ebitda === 'number' ? item.ebitda : 0,
+    yearEstablished: String(item?.yearEstablished || ''),
+    employees: String(item?.employees || ''),
+    buildingSize: String(item?.buildingSize || ''),
+    propertyId: String(item?.propertyId || ''),
+    listing_id: String(item?.listing_id || ''),
+    hasValidId: true,
+    details: item?.details || {},
   };
+  
+  return (
+    <View style={[styles.card, !hasValidPrice && styles.noPriceCard]}>
+      <TouchableOpacity
+        style={styles.cardContent}
+        onPress={() => {
+          // Pass the sanitized deal data
+          navigation.navigate('DealDetail', { deal: safeDealData });
+        }}
+      >
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle} numberOfLines={2}>
+            {String(title || 'Property Listing')}
+          </Text>
+          <Text style={[styles.cardPrice, !hasValidPrice && styles.noPrice]}>
+            {String(displayPrice || 'Price Not Disclosed')}
+          </Text>
+        </View>
+        
+        <View style={styles.cardDetails}>
+          <View style={styles.typeContainer}>
+            <Text style={styles.cardType}>
+              {listingInfo.emoji} {listingInfo.type}
+            </Text>
+            {subtype && typeof subtype === 'string' && (
+              <Text style={styles.cardSubtype}> • {subtype}</Text>
+            )}
+          </View>
+        </View>
+        
+        <Text style={styles.cardLocation}>
+          📍 {String(location || 'N/A')}
+        </Text>
+        
+        {!hasValidPrice && (
+          <View style={styles.priceBadge}>
+            <Text style={styles.priceBadgeText}>💵 Price on Request</Text>
+          </View>
+        )}
+        
+        {/* Chat button on card */}
+        {canChat && chatId && (
+          <TouchableOpacity
+            style={styles.chatButtonOnCard}
+            onPress={() => {
+              navigation.navigate('Chat', { 
+                dealId: String(chatId),
+                dealTitle: String(title || 'Deal'),
+                price: typeof item?.price === 'number' ? item.price : 0,
+                location: String(location || ''),
+                propertyType: String(item?.propertyType || item?.category || '')
+              });
+            }}
+          >
+            <Icon name="chatbubble-outline" size={14} color="#10b981" />
+            <Text style={styles.chatButtonOnCardText}>💬 Chat</Text>
+          </TouchableOpacity>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+};
 
   // Filter Modal
   const FilterModal = () => (
@@ -525,7 +563,7 @@ const filteredItems = useMemo(() => {
         <FlatList
           data={filteredItems}
           renderItem={renderItem}
-          keyExtractor={(item, index) => item.id || `item-${index}`}
+          keyExtractor={(item, index) => item?.id || `item-${index}`}
           contentContainerStyle={styles.listContent}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
@@ -547,7 +585,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#f5f5f5',
-    paddingTop: Platform.OS === 'ios' ? 0 : 0,
   },
   container: {
     flex: 1,
