@@ -165,19 +165,16 @@ export default function ChatScreen({ route, navigation }) {
     }
   };
 
+  // 🔥 UPDATED: Enhanced syncDealWithBackend function with proper token handling
   const syncDealWithBackend = async () => {
     try {
+      const token = await AsyncStorage.getItem('userToken');
       if (!token) {
         console.log('❌ No token available for sync');
+        Alert.alert('Login Required', 'Please login to sync this deal.');
         return false;
       }
       
-      if (isSyncing) {
-        console.log('⏳ Already syncing, please wait...');
-        return false;
-      }
-      
-      setIsSyncing(true);
       console.log('🔄 Syncing deal with backend...');
       console.log(`🔑 Token length: ${token.length}`);
       
@@ -187,31 +184,35 @@ export default function ChatScreen({ route, navigation }) {
           dealId: chatDealId,
           dealData: {
             title: dealTitle || 'Property Listing',
-            price: price || 0,
-            location: location || '',
-            propertyType: propertyType || 'Commercial'
+            price: route.params?.price || 0,
+            location: route.params?.location || '',
+            propertyType: route.params?.propertyType || 'Commercial'
           }
         },
         { 
           headers: { 
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
-          } 
+          },
+          timeout: 10000
         }
       );
       
-      setIsSyncing(false);
+      console.log('📊 Sync response:', response.data);
       
       if (response.data.success) {
-        const newDealId = response.data.deal.id;
-        console.log(`✅ Deal synced successfully with ID: ${newDealId}`);
-        setSyncedDealId(newDealId);
-        return newDealId;
+        console.log('✅ Deal synced successfully');
+        setSyncedDealId(response.data.deal.id);
+        return response.data.deal.id;
       }
       return false;
     } catch (error) {
-      setIsSyncing(false);
       console.log('❌ Failed to sync deal:', error.message);
+      if (error.response?.status === 401) {
+        Alert.alert('Session Expired', 'Please login again.', [
+          { text: 'Login', onPress: () => navigation.navigate('Login') }
+        ]);
+      }
       return false;
     }
   };

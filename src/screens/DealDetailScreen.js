@@ -53,13 +53,24 @@ export default function DealDetailScreen({ route, navigation }) {
     return null;
   };
 
-  // Helper to get the best image URL
+  // 🔥 UPDATED: Enhanced getImageUrl function with placeholder images
   const getImageUrl = (deal) => {
+    // First check all possible image fields
     if (deal.imageUrl) return deal.imageUrl;
     if (deal.image) return deal.image;
     if (deal.photo) return deal.photo;
     if (deal.images && deal.images.length > 0) return deal.images[0];
     if (deal.image_urls && deal.image_urls.length > 0) return deal.image_urls[0];
+    
+    // Use a placeholder image for properties without images
+    if (deal.propertyType) {
+      return 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=400'; // Building placeholder
+    }
+    if (deal.category) {
+      return 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=400'; // Business placeholder
+    }
+    
+    // Default placeholder if no other indicators
     return null;
   };
 
@@ -106,7 +117,7 @@ export default function DealDetailScreen({ route, navigation }) {
                      deal.source === 'Mock Data' ||
                      (deal.id && typeof deal.id === 'string' && deal.id.startsWith('mock-'));
 
-  // Get image
+  // Get image (now with placeholder support)
   const imageUrl = getImageUrl(deal);
 
   // Get broker info

@@ -147,7 +147,87 @@ const getCleanSource = (source) => {
     return source;
 };
 
-// Map cached data with improved price extraction
+// 🔥 Enhanced mapCacheData function - properly handles cache data with images and prices
+const mapCacheData = (item) => {
+  // Get the best title
+  const title = item.title || item.name || item.listingName || item.address || 'Property Listing';
+  
+  // Get the best price
+  let price = 0;
+  if (item.priceNumeric) price = parseFloat(item.priceNumeric);
+  else if (item.price) {
+    if (typeof item.price === 'number') price = item.price;
+    else if (typeof item.price === 'string') {
+      const cleaned = item.price.replace(/[$€£,]/g, '').trim();
+      const num = parseFloat(cleaned);
+      if (!isNaN(num)) price = num;
+    }
+  }
+  else if (item.formattedPrice) {
+    const cleaned = item.formattedPrice.replace(/[$€£,]/g, '').trim();
+    const num = parseFloat(cleaned);
+    if (!isNaN(num)) price = num;
+  }
+  
+  // Get the best image URL
+  let imageUrl = null;
+  if (item.imageUrl) imageUrl = item.imageUrl;
+  else if (item.image) imageUrl = item.image;
+  else if (item.photo) imageUrl = item.photo;
+  else if (item.images && item.images.length > 0) imageUrl = item.images[0];
+  else if (item.image_urls && item.image_urls.length > 0) imageUrl = item.image_urls[0];
+  else if (item.photo) imageUrl = item.photo;
+  
+  // Get location
+  const location = item.location || 
+                   (item.city && item.state ? `${item.city}, ${item.state}` : '') ||
+                   item.city || item.state || 'Location N/A';
+  
+  // Determine if it's a property or business
+  const isProperty = item.propertyType || item.address || item.size || item.lotSize;
+  const isBusiness = item.category || item.cashFlow || item.revenue || item.broker;
+  
+  // Price display
+  let priceDisplay = 'Price Not Disclosed';
+  if (price > 0) {
+    priceDisplay = `$${price.toLocaleString()}`;
+  } else if (item.price && typeof item.price === 'string') {
+    priceDisplay = item.price;
+  } else if (item.formattedPrice) {
+    priceDisplay = item.formattedPrice;
+  }
+  
+  return {
+    id: item.propertyId || item.listing_id || item.id || `item-${Math.random()}`,
+    title: title,
+    price: price,
+    priceDisplay: priceDisplay,
+    priceNumeric: price,
+    location: location,
+    address: item.address || '',
+    city: item.city || '',
+    state: item.state || '',
+    propertyType: item.propertyType || item.propertySubtype || '',
+    category: item.category || '',
+    source: getCleanSource('Property Listing'),
+    url: item.listingUrl || item.url || '',
+    description: item.description || item.summary || '',
+    imageUrl: imageUrl,
+    broker: item.brokerName || item.broker || '',
+    brokerPhone: item.brokerPhone || '',
+    size: item.size || item.totalSize || item.buildingSize || '',
+    lotSize: item.lotSize || '',
+    yearBuilt: item.yearBuilt || '',
+    cashFlow: item.cashFlow || 0,
+    revenue: item.revenue || 0,
+    details: item,
+    hasValidId: true,
+    isProperty: isProperty,
+    isBusiness: isBusiness
+  };
+};
+
+// Map cached data with improved price extraction (kept for backward compatibility)
 const mapCachedData = (item) => {
     // IMPROVED PRICE EXTRACTION
     let price = 0;
@@ -318,7 +398,7 @@ const mapBizBuySellData = (item) => {
     };
 };
 
-// 🔥 NEW: Get data from backend cache
+// 🔥 Get data from backend cache
 const getBackendCache = async () => {
     try {
         console.log('🌐 Checking backend cache...');
@@ -383,8 +463,8 @@ export const scrapeBizBuySell = async (keyword = '', location = '', state = '', 
     const backendData = await getBackendCache();
     if (backendData && backendData.length > 0) {
         console.log(`📦 Using backend cache: ${backendData.length} results`);
-        // Map the cached data with improved price extraction
-        const mappedData = backendData.map(mapCachedData);
+        // Use the enhanced mapCacheData function for better mapping
+        const mappedData = backendData.map(mapCacheData);
         // Also save to Async cache for offline use
         await saveToAsyncCache(mappedData);
         return mappedData.slice(0, limit);
@@ -492,66 +572,24 @@ export const fetchAllOpportunities = async (searchParams = {}) => {
         const data = await scrapeBizBuySell(keyword, searchLocation, searchState, Math.min(limit, 50));
         
         if (data && data.length > 0) {
-            // IMPROVED CLASSIFICATION: Better separation of businesses and properties
+            // 🔥 UPDATED: Simplified classification logic
             const businesses = [];
             const properties = [];
             
             data.forEach(item => {
-                // Check if it's a business (has business-specific fields)
-                const isBusiness = 
-                    item.category || 
-                    item.cashFlow || 
-                    item.revenue || 
-                    item.ebitda ||
-                    item.broker ||
-                    (item.source && item.source.includes('Business')) ||
-                    (item.title && (
-                        item.title.includes('Business') || 
-                        item.title.includes('Company') || 
-                        item.title.includes('Agency') ||
-                        item.title.includes('Franchise') ||
-                        item.title.includes('for Sale') && item.buildingSize
-                    ));
-                
-                // Check if it's a property (has property-specific fields)
-                const isProperty = 
-                    item.propertyType || 
-                    item.address || 
-                    item.size || 
-                    item.lotSize ||
-                    item.buildingSize ||
-                    item.totalSize ||
-                    (item.source && item.source.includes('Property')) ||
-                    (item.title && (
-                        item.title.includes('Building') || 
-                        item.title.includes('Property') || 
-                        item.title.includes('Land') ||
-                        item.title.includes('Warehouse') ||
-                        item.title.includes('Office') ||
-                        item.title.includes('Retail')
-                    ));
-                
-                // Classify based on what's available
-                if (isBusiness && !isProperty) {
-                    businesses.push(item);
-                } else if (isProperty && !isBusiness) {
+                // If it has property fields, treat as property
+                if (item.propertyType || item.address || item.size || item.lotSize) {
                     properties.push(item);
-                } else if (isBusiness && isProperty) {
-                    // If both, check which one is stronger
-                    if (item.propertyType || item.address) {
-                        properties.push(item);
-                    } else {
-                        businesses.push(item);
-                    }
+                }
+                // If it has business fields, treat as business
+                else if (item.category || item.cashFlow || item.revenue) {
+                    businesses.push(item);
+                }
+                // Default: treat as property if it has a price, otherwise business
+                else if (item.price || item.priceNumeric) {
+                    properties.push(item);
                 } else {
-                    // Default: check if it has a price and title, guess based on source
-                    if (item.source && item.source.includes('Sample')) {
-                        businesses.push(item);
-                    } else if (item.propertyType || item.address) {
-                        properties.push(item);
-                    } else {
-                        businesses.push(item);
-                    }
+                    businesses.push(item);
                 }
             });
             
