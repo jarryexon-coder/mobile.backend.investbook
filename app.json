@@ -2,7 +2,7 @@
   "expo": {
     "name": "InvestBook Pro",
     "slug": "mobile-fixed",
-    "version": "1.0.0",
+    "version": "1.0.6",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -17,7 +17,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.jerryjiya.investbookpro",
-      "buildNumber": "1.0.0",
+      "buildNumber": "1.0.6",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSLocationWhenInUseUsageDescription": "InvestBook Pro uses your location to show nearby investment opportunities.",

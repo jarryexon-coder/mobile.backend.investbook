@@ -15,24 +15,30 @@ import {
 } from 'react-native';
 import { fetchAllOpportunities } from '../services/scraperService';
 
-// Format price with full numbers and commas (no abbreviations)
 const formatPrice = (price) => {
-  if (!price || price === 0) return 'N/A';
+  if (!price || price === 0) return 'Price Not Disclosed';
   
+  // If it's a string, try to parse it
+  if (typeof price === 'string') {
+    const cleaned = price.replace(/[$€£,]/g, '').trim();
+    const num = parseFloat(cleaned);
+    if (!isNaN(num) && num > 0) {
+      price = num;
+    } else {
+      return price; // Return as-is if it's "Upon Request" etc.
+    }
+  }
+  
+  // For numbers, format with full commas
   if (typeof price === 'number') {
+    // Show full price with commas
     return `$${price.toLocaleString('en-US', {
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     })}`;
   }
   
-  const numPrice = parseFloat(String(price).replace(/[$,]/g, ''));
-  if (isNaN(numPrice) || numPrice === 0) return 'N/A';
-  
-  return `$${numPrice.toLocaleString('en-US', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  })}`;
+  return 'Price Not Disclosed';
 };
 
 // Helper to get display title
@@ -270,56 +276,73 @@ export default function OpportunitiesScreen({ navigation }) {
     return option ? option.label : 'Type';
   };
 
-  const renderItem = ({ item }) => {
-    // Get the best price display
-    let displayPrice = item.priceDisplay || formatPrice(item.price);
-    
-    if (!displayPrice || displayPrice === 'N/A' || displayPrice === 'Price Not Disclosed') {
-      if (item.priceText && item.priceText !== 'None') displayPrice = item.priceText;
-      else if (item.formattedPrice) displayPrice = item.formattedPrice;
-      else if (item.priceNumeric) displayPrice = `$${item.priceNumeric.toLocaleString()}`;
-      else if (item.price && typeof item.price === 'number') displayPrice = `$${item.price.toLocaleString()}`;
-      else if (item.country === 'GB' || item.region === 'London') displayPrice = '£ Price on Request';
-      else if (item.listingType === 'For Lease' || item.listingType === 'For Rent') displayPrice = 'Lease - Price on Request';
-      else displayPrice = 'Price Not Disclosed';
+const renderItem = ({ item }) => {
+  // Get the best price display
+  let displayPrice = item.priceDisplay || formatPrice(item.price);
+  
+  // Check if price is "Not Disclosed" or "Upon Request" or similar
+  const isPriceNotDisclosed = !item.price || 
+                              item.price === 0 || 
+                              displayPrice === 'Price Not Disclosed' ||
+                              displayPrice === 'N/A' ||
+                              displayPrice === 'Upon Request' ||
+                              displayPrice === 'Price on Request';
+  
+  // If price is not disclosed or we have no price, try alternative fields
+  if (isPriceNotDisclosed || !displayPrice || displayPrice === 'N/A' || displayPrice === 'Price Not Disclosed') {
+    if (item.priceText && item.priceText !== 'None') {
+      displayPrice = item.priceText;
+    } else if (item.formattedPrice) {
+      displayPrice = item.formattedPrice;
+    } else if (item.priceNumeric) {
+      displayPrice = `$${item.priceNumeric.toLocaleString()}`;
+    } else if (item.price && typeof item.price === 'number') {
+      displayPrice = `$${item.price.toLocaleString()}`;
+    } else if (item.country === 'GB' || item.region === 'London') {
+      displayPrice = '£ Price on Request';
+    } else if (item.listingType === 'For Lease' || item.listingType === 'For Rent') {
+      displayPrice = 'Lease - Price on Request';
+    } else {
+      displayPrice = 'Price Not Disclosed';
     }
-    
-    const listingInfo = getListingType(item);
-    const subtype = getSubtype(item);
-    const title = getDisplayTitle(item);
-    const location = getDisplayLocation(item);
-    
-    return (
-      <View style={styles.card}>
-        <TouchableOpacity
-          style={styles.cardContent}
-          onPress={() => navigation.navigate('DealDetail', { deal: item })}
-        >
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle} numberOfLines={2}>
-              {title}
-            </Text>
-            <Text style={styles.cardPrice}>{displayPrice}</Text>
-          </View>
+  }
           
-          <View style={styles.cardDetails}>
-            <View style={styles.typeContainer}>
-              <Text style={styles.cardType}>
-                {listingInfo.emoji} {listingInfo.type}
-              </Text>
-              {subtype && (
-                <Text style={styles.cardSubtype}> • {subtype}</Text>
-              )}
-            </View>
-          </View>
-          
-          <Text style={styles.cardLocation}>
-            📍 {location}
+  const listingInfo = getListingType(item);
+  const subtype = getSubtype(item);
+  const title = getDisplayTitle(item);
+  const location = getDisplayLocation(item);
+        
+  return (
+    <View style={styles.card}>
+      <TouchableOpacity
+        style={styles.cardContent}
+        onPress={() => navigation.navigate('DealDetail', { deal: item })}
+      >
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle} numberOfLines={2}>
+            {title}
           </Text>
-        </TouchableOpacity>
-      </View>
-    );
-  };
+          <Text style={styles.cardPrice}>{displayPrice}</Text>
+        </View>
+    
+        <View style={styles.cardDetails}>
+          <View style={styles.typeContainer}>
+            <Text style={styles.cardType}>
+              {listingInfo.emoji} {listingInfo.type}
+            </Text>
+            {subtype && (
+              <Text style={styles.cardSubtype}> • {subtype}</Text>
+            )}
+          </View>
+        </View>
+  
+        <Text style={styles.cardLocation}>  
+          📍 {location}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+};
 
   // Filter Modal
   const FilterModal = () => (
