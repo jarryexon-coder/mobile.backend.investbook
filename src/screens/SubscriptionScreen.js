@@ -9,20 +9,58 @@ import {
   ActivityIndicator,
   SafeAreaView,
   StatusBar,
+  Linking,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../hooks/useAuth';
-import { subscriptionService } from '../services/subscriptionService';
 
 const API_URL = 'https://investbook-production.up.railway.app/api';
 
+const SUBSCRIPTION_TIERS = {
+  view_only: {
+    id: 'view_only',
+    name: 'View Only',
+    price: '$4.99',
+    period: '/month',
+    description: 'Access to all property listings and deals',
+    features: [
+      'View all property listings',
+      'Under $200k deals access',
+      'Property details and insights',
+      'Search and filter properties',
+      'Save favorite listings',
+    ],
+    color: '#2563eb',
+    icon: 'eye-outline',
+  },
+  chat: {
+    id: 'chat',
+    name: 'Chat & Network',
+    price: '$9.99',
+    period: '/month',
+    description: 'Everything in View Only + Connect with investors',
+    features: [
+      'Everything in View Only',
+      'Real-time deal chat',
+      'Message other investors',
+      'Group deal discussions',
+      'Investment collaboration tools',
+      'Priority support',
+    ],
+    color: '#8b5cf6',
+    icon: 'chatbubbles-outline',
+    recommended: true,
+  },
+};
+
 export default function SubscriptionScreen({ navigation }) {
-  const { user, token } = useAuth();
+  const { user, token, logout } = useAuth();
   const [loading, setLoading] = useState(true);
   const [subscribing, setSubscribing] = useState(false);
   const [subscription, setSubscription] = useState(null);
   const [isSubscribed, setIsSubscribed] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState('monthly');
+  const [selectedTier, setSelectedTier] = useState('chat');
+  const [testMode, setTestMode] = useState(false);
 
   useEffect(() => {
     loadSubscriptionStatus();
@@ -31,18 +69,36 @@ export default function SubscriptionScreen({ navigation }) {
   const loadSubscriptionStatus = async () => {
     try {
       setLoading(true);
-      const subscribed = await subscriptionService.isSubscribed();
-      const sub = await subscriptionService.getSubscription();
-      setIsSubscribed(subscribed);
-      setSubscription(sub);
+      
+      if (!token) {
+        setLoading(false);
+        return;
+      }
+
+      const response = await fetch(`${API_URL}/subscriptions/status`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setIsSubscribed(data.isSubscribed);
+        setSubscription(data);
+        console.log('📊 Subscription status:', data);
+      } else {
+        console.log('⚠️ Could not load subscription status');
+        setIsSubscribed(false);
+      }
     } catch (error) {
       console.error('Error loading subscription:', error);
+      setIsSubscribed(false);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSubscribe = async (planId) => {
+  const handleSubscribe = async (tierId) => {
     if (!token) {
       Alert.alert('Error', 'Please login first');
       return;
@@ -50,32 +106,80 @@ export default function SubscriptionScreen({ navigation }) {
 
     setSubscribing(true);
     try {
-      const response = await fetch(`${API_URL}/subscriptions/create-payment-intent`, {
+      // First, try to create a checkout session
+      const response = await fetch(`${API_URL}/create-checkout-session`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify({ planId }),
+        body: JSON.stringify({ planId: tierId }),
       });
 
       const data = await response.json();
       
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to create payment intent');
+        throw new Error(data.error || 'Failed to create checkout session');
       }
 
-      Alert.alert(
-        'Payment Required',
-        'Complete your subscription payment to activate premium features.',
-        [
-          {
-            text: 'Continue to Payment',
-            onPress: () => activateSubscription(planId),
-          },
-          { text: 'Cancel', style: 'cancel' },
-        ]
-      );
+      // Check if we're in test mode
+      if (data.test_mode) {
+        // Test mode - activate without payment
+        Alert.alert(
+          'Test Mode',
+          'Payment is not configured. Subscription will be activated for testing.',
+          [
+            {
+              text: 'Activate Test Subscription',
+              onPress: async () => {
+                try {
+                  const activateResponse = await fetch(`${API_URL}/test-activate`, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({ planId: tierId }),
+                  });
+
+                  if (activateResponse.ok) {
+                    Alert.alert('Success', 'Test subscription activated!');
+                    await loadSubscriptionStatus();
+                    navigation.goBack();
+                  } else {
+                    Alert.alert('Error', 'Failed to activate test subscription');
+                  }
+                } catch (error) {
+                  Alert.alert('Error', 'Failed to activate test subscription');
+                }
+              },
+            },
+            { text: 'Cancel', style: 'cancel' },
+          ]
+        );
+        return;
+      }
+
+      // Real payment flow - open Stripe Checkout
+      if (data.url) {
+        Alert.alert(
+          'Proceed to Payment',
+          `You will be redirected to Stripe to complete your subscription payment.`,
+          [
+            {
+              text: 'Continue to Payment',
+              onPress: () => {
+                // Open Stripe Checkout URL
+                Linking.openURL(data.url);
+              },
+            },
+            { text: 'Cancel', style: 'cancel' },
+          ]
+        );
+      } else {
+        Alert.alert('Error', 'Could not create checkout session');
+      }
+      
     } catch (error) {
       console.error('Subscription error:', error);
       Alert.alert('Error', error.message || 'Failed to process subscription');
@@ -84,33 +188,10 @@ export default function SubscriptionScreen({ navigation }) {
     }
   };
 
-  const activateSubscription = async (planId) => {
-    try {
-      const response = await fetch(`${API_URL}/subscriptions/activate`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ planId }),
-      });
-
-      if (response.ok) {
-        await subscriptionService.subscribe(planId);
-        Alert.alert('Success', 'Subscription activated successfully!');
-        await loadSubscriptionStatus();
-      } else {
-        Alert.alert('Error', 'Failed to activate subscription');
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to activate subscription');
-    }
-  };
-
   const handleCancelSubscription = async () => {
     Alert.alert(
       'Cancel Subscription',
-      'Are you sure you want to cancel?',
+      'Are you sure you want to cancel? You will lose access to premium features.',
       [
         { text: 'Keep Subscription', style: 'cancel' },
         {
@@ -127,11 +208,12 @@ export default function SubscriptionScreen({ navigation }) {
               });
               
               if (response.ok) {
-                await subscriptionService.cancelSubscription();
+                setIsSubscribed(false);
                 Alert.alert('Canceled', 'Your subscription has been canceled.');
                 await loadSubscriptionStatus();
               } else {
-                Alert.alert('Error', 'Failed to cancel subscription');
+                const errorData = await response.json();
+                Alert.alert('Error', errorData.message || 'Failed to cancel subscription');
               }
             } catch (error) {
               Alert.alert('Error', 'Failed to cancel subscription');
@@ -141,6 +223,8 @@ export default function SubscriptionScreen({ navigation }) {
       ]
     );
   };
+
+  const accessLevel = isSubscribed ? (subscription?.tier || subscription?.planId || 'view_only') : 'none';
 
   if (loading) {
     return (
@@ -153,104 +237,122 @@ export default function SubscriptionScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" />
-      <ScrollView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#f5f5f5" />
+      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <Text style={styles.title}>Subscription</Text>
-          <Text style={styles.subtitle}>Manage your InvestBook subscription</Text>
+          <Text style={styles.title}>💰 Subscription Plans</Text>
+          <Text style={styles.subtitle}>
+            {isSubscribed 
+              ? `You are currently on the "${SUBSCRIPTION_TIERS[accessLevel]?.name || 'View Only'}" plan`
+              : 'Choose the plan that fits your needs'}
+          </Text>
         </View>
 
-        <View style={[styles.statusCard, isSubscribed ? styles.activeCard : styles.inactiveCard]}>
-          <View style={styles.statusHeader}>
-            <Icon 
-              name={isSubscribed ? 'checkmark-circle' : 'lock-closed'} 
-              size={24} 
-              color={isSubscribed ? '#22c55e' : '#ef4444'} 
-            />
-            <Text style={styles.statusText}>
-              {isSubscribed ? 'Active' : 'Inactive'}
+        {isSubscribed && (
+          <View style={styles.statusCard}>
+            <View style={styles.statusHeader}>
+              <Icon name="checkmark-circle" size={24} color="#22c55e" />
+              <Text style={styles.statusText}>Active Subscription</Text>
+            </View>
+            <Text style={styles.statusDetail}>
+              Plan: {SUBSCRIPTION_TIERS[accessLevel]?.name || 'View Only'}
             </Text>
-          </View>
-          {isSubscribed && subscription && (
-            <View style={styles.statusDetails}>
-              <Text style={styles.statusDetailText}>
-                Plan: {subscription.planId === 'monthly' ? 'Monthly' : 'Yearly'}
-              </Text>
-              <Text style={styles.statusDetailText}>
+            {subscription?.expiryDate && (
+              <Text style={styles.statusDetail}>
                 Expires: {new Date(subscription.expiryDate).toLocaleDateString()}
               </Text>
+            )}
+            <View style={styles.accessBadge}>
+              <Text style={styles.accessBadgeText}>
+                {accessLevel === 'chat' ? '💬 Full Access (Chat + View)' : '👁️ View Only'}
+              </Text>
             </View>
-          )}
-        </View>
+          </View>
+        )}
 
         {!isSubscribed && (
           <View style={styles.plansContainer}>
-            <Text style={styles.sectionTitle}>Choose Your Plan</Text>
-            
-            <TouchableOpacity
-              style={[
-                styles.planCard,
-                selectedPlan === 'monthly' && styles.planCardSelected,
-              ]}
-              onPress={() => setSelectedPlan('monthly')}
-            >
-              <View style={styles.planHeader}>
-                <Text style={styles.planName}>Monthly</Text>
-                <Text style={styles.planPrice}>$4.99</Text>
-              </View>
-              <Text style={styles.planInterval}>per month</Text>
-              {selectedPlan === 'monthly' && (
-                <View style={styles.selectedBadge}>
-                  <Text style={styles.selectedBadgeText}>Selected</Text>
+            {Object.entries(SUBSCRIPTION_TIERS).map(([key, tier]) => (
+              <TouchableOpacity
+                key={key}
+                style={[
+                  styles.planCard,
+                  selectedTier === key && styles.planCardSelected,
+                  tier.recommended && styles.planCardPopular,
+                ]}
+                onPress={() => setSelectedTier(key)}
+                activeOpacity={0.8}
+              >
+                {tier.recommended && (
+                  <View style={styles.popularBadge}>
+                    <Text style={styles.popularBadgeText}>Best Value</Text>
+                  </View>
+                )}
+                
+                <View style={styles.planHeader}>
+                  <View style={styles.planIcon}>
+                    <Icon name={tier.icon} size={24} color={tier.color} />
+                  </View>
+                  <View style={styles.planInfo}>
+                    <Text style={styles.planName}>{tier.name}</Text>
+                    <Text style={styles.planDescription}>{tier.description}</Text>
+                  </View>
                 </View>
-              )}
-            </TouchableOpacity>
+
+                <Text style={styles.planPrice}>
+                  {tier.price}
+                  <Text style={styles.planPeriod}>{tier.period}</Text>
+                </Text>
+
+                <View style={styles.planFeatures}>
+                  {tier.features.map((feature, index) => (
+                    <View key={index} style={styles.featureItem}>
+                      <Icon name="checkmark-circle" size={16} color="#10b981" />
+                      <Text style={styles.featureText}>{feature}</Text>
+                    </View>
+                  ))}
+                </View>
+
+                {selectedTier === key && (
+                  <View style={styles.selectedBadge}>
+                    <Text style={styles.selectedBadgeText}>Selected</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            ))}
 
             <TouchableOpacity
-              style={[
-                styles.planCard,
-                selectedPlan === 'yearly' && styles.planCardSelected,
-                styles.planCardPopular,
-              ]}
-              onPress={() => setSelectedPlan('yearly')}
-            >
-              <View style={styles.popularBadge}>
-                <Text style={styles.popularBadgeText}>Best Value</Text>
-              </View>
-              <View style={styles.planHeader}>
-                <Text style={styles.planName}>Yearly</Text>
-                <Text style={styles.planPrice}>$49.99</Text>
-              </View>
-              <Text style={styles.planInterval}>per year (save $9.89)</Text>
-              {selectedPlan === 'yearly' && (
-                <View style={styles.selectedBadge}>
-                  <Text style={styles.selectedBadgeText}>Selected</Text>
-                </View>
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.subscribeButton}
-              onPress={() => handleSubscribe(selectedPlan)}
+              style={[styles.subscribeButton, subscribing && styles.subscribeButtonDisabled]}
+              onPress={() => handleSubscribe(selectedTier)}
               disabled={subscribing}
             >
               {subscribing ? (
                 <ActivityIndicator color="white" />
               ) : (
                 <Text style={styles.subscribeButtonText}>
-                  Subscribe Now - ${selectedPlan === 'monthly' ? '4.99' : '49.99'}
+                  Subscribe to {SUBSCRIPTION_TIERS[selectedTier].name}
                 </Text>
               )}
             </TouchableOpacity>
 
             <Text style={styles.secureText}>
-              🔒 Secured by Stripe. Your payment information is safe.
+              🔒 Secured by Stripe. Cancel anytime.
             </Text>
           </View>
         )}
 
         {isSubscribed && (
           <View style={styles.actionsContainer}>
+            <Text style={styles.actionsTitle}>Manage Subscription</Text>
+            
+            <TouchableOpacity
+              style={[styles.actionButton, styles.viewButton]}
+              onPress={() => navigation.goBack()}
+            >
+              <Icon name="arrow-back-outline" size={20} color="#2563eb" />
+              <Text style={[styles.actionButtonText, styles.viewButtonText]}>Back to App</Text>
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={[styles.actionButton, styles.cancelButton]}
               onPress={handleCancelSubscription}
@@ -282,6 +384,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#f5f5f5',
   },
   loadingText: {
     marginTop: 12,
@@ -289,75 +392,81 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   header: {
-    padding: 16,
-    paddingTop: 8,
-    backgroundColor: 'white',
+    padding: 20,
+    paddingBottom: 16,
+    backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#e5e5e5',
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
+    fontSize: 28,
+    fontWeight: '700',
     color: '#1a1a1a',
   },
   subtitle: {
     fontSize: 14,
     color: '#666',
-    marginTop: 2,
+    marginTop: 4,
   },
   statusCard: {
     margin: 16,
-    padding: 14,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  activeCard: {
+    padding: 16,
     backgroundColor: '#dcfce7',
-  },
-  inactiveCard: {
-    backgroundColor: '#fee2e2',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#86efac',
   },
   statusHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 8,
   },
   statusText: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  statusDetails: {
-    alignItems: 'flex-end',
-  },
-  statusDetailText: {
-    fontSize: 13,
-    color: '#666',
-  },
-  plansContainer: {
-    padding: 16,
-    paddingTop: 0,
-  },
-  sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: '#1a1a1a',
-    marginBottom: 12,
+    marginLeft: 8,
+  },
+  statusDetail: {
+    fontSize: 14,
+    color: '#333',
+    marginBottom: 4,
+  },
+  accessBadge: {
+    marginTop: 8,
+    backgroundColor: 'rgba(37, 99, 235, 0.1)',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+  },
+  accessBadgeText: {
+    fontSize: 13,
+    color: '#2563eb',
+    fontWeight: '500',
+  },
+  plansContainer: {
+    padding: 16,
   },
   planCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
     borderWidth: 2,
     borderColor: 'transparent',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   planCardSelected: {
     borderColor: '#2563eb',
   },
   planCardPopular: {
     borderColor: '#f59e0b',
+    backgroundColor: '#fffbeb',
   },
   popularBadge: {
     backgroundColor: '#f59e0b',
@@ -374,31 +483,62 @@ const styles = StyleSheet.create({
   },
   planHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 12,
+  },
+  planIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#f0f7ff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  planInfo: {
+    flex: 1,
   },
   planName: {
     fontSize: 18,
     fontWeight: '600',
     color: '#1a1a1a',
   },
-  planPrice: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#2563eb',
-  },
-  planInterval: {
+  planDescription: {
     fontSize: 13,
     color: '#666',
     marginTop: 2,
   },
+  planPrice: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#2563eb',
+    marginBottom: 12,
+  },
+  planPeriod: {
+    fontSize: 14,
+    fontWeight: '400',
+    color: '#666',
+  },
+  planFeatures: {
+    marginTop: 8,
+  },
+  featureItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  featureText: {
+    fontSize: 14,
+    color: '#444',
+    marginLeft: 8,
+  },
   selectedBadge: {
+    marginTop: 12,
     backgroundColor: '#2563eb',
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 12,
     alignSelf: 'flex-start',
-    marginTop: 8,
   },
   selectedBadgeText: {
     color: 'white',
@@ -411,6 +551,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     marginTop: 8,
+  },
+  subscribeButtonDisabled: {
+    opacity: 0.6,
   },
   subscribeButtonText: {
     color: 'white',
@@ -425,22 +568,35 @@ const styles = StyleSheet.create({
   },
   actionsContainer: {
     padding: 16,
+    paddingTop: 0,
+  },
+  actionsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1a1a1a',
+    marginBottom: 12,
   },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'white',
+    backgroundColor: '#fff',
     padding: 16,
     borderRadius: 12,
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e5e5e5',
   },
   actionButtonText: {
     fontSize: 16,
-    color: '#2563eb',
     marginLeft: 12,
   },
+  viewButton: {
+    borderColor: '#2563eb',
+  },
+  viewButtonText: {
+    color: '#2563eb',
+  },
   cancelButton: {
-    borderWidth: 1,
     borderColor: '#ef4444',
   },
   cancelButtonText: {

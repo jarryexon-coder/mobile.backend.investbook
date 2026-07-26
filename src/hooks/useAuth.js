@@ -27,8 +27,11 @@ export const AuthProvider = ({ children }) => {
         console.log('📦 Found stored session, restoring...');
         setToken(storedToken);
         setUser(JSON.parse(userData));
+        // Set the auth header for future requests
         axios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
         console.log('✅ User session restored');
+        console.log(`👤 User: ${JSON.parse(userData).username || JSON.parse(userData).email}`);
+        console.log(`🔑 Token: ${storedToken.substring(0, 20)}...`);
       } else {
         console.log('⚠️ No stored session found');
         // Clear any invalid state
@@ -37,7 +40,7 @@ export const AuthProvider = ({ children }) => {
         delete axios.defaults.headers.common['Authorization'];
       }
     } catch (error) {
-      console.error('Error loading user:', error);
+      console.error('❌ Error loading user:', error);
       // Clear invalid state
       setToken(null);
       setUser(null);
@@ -50,6 +53,12 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password) => {
     try {
       console.log('🔐 Attempting login for:', email);
+      
+      // Validate input
+      if (!email || !password) {
+        return { success: false, message: 'Email and password are required' };
+      }
+      
       const response = await axios.post(`${API_URL}/login`, { email, password });
       
       console.log('📊 Login response:', {
@@ -78,34 +87,39 @@ export const AuthProvider = ({ children }) => {
         axios.defaults.headers.common['Authorization'] = `Bearer ${userToken}`;
         
         console.log('✅ Login successful, token stored');
-        console.log(`🔑 Token stored: ${userToken.substring(0, 20)}...`);
-        console.log(`👤 User stored: ${JSON.stringify(userData)}`);
+        console.log(`🔑 Token: ${userToken.substring(0, 20)}...`);
+        console.log(`👤 User: ${userData.username || userData.email}`);
         
         return { success: true, user: userData };
       }
-      return { success: false, message: 'Invalid credentials' };
+      return { success: false, message: 'Invalid credentials - no token received' };
     } catch (error) {
-      console.error('Login error:', error.response?.data);
+      console.error('❌ Login error:', error.response?.data || error.message);
       return { 
         success: false, 
-        message: error.response?.data?.message || 'Login failed'
+        message: error.response?.data?.message || 'Login failed. Please check your credentials.'
       };
     }
   };
 
   const register = async (username, email, password) => {
     try {
+      console.log('📝 Registering new user:', email);
+      
       const response = await axios.post(`${API_URL}/register`, {
         username,
         email,
         password
       });
       
-      if (response.data.message) {
-        return { success: true, message: response.data.message };
+      if (response.data.message || response.data.user) {
+        console.log('✅ Registration successful!');
+        // Auto-login after registration
+        return await login(email, password);
       }
       return { success: false, message: 'Registration failed' };
     } catch (error) {
+      console.error('❌ Registration error:', error.response?.data || error.message);
       return { 
         success: false, 
         message: error.response?.data?.message || 'Registration failed'
@@ -116,17 +130,40 @@ export const AuthProvider = ({ children }) => {
   const logout = async () => {
     try {
       console.log('🔄 Logging out...');
+      
+      // Clear storage
       await AsyncStorage.removeItem('userToken');
       await AsyncStorage.removeItem('userData');
       
+      // Clear axios headers
       delete axios.defaults.headers.common['Authorization'];
       
+      // Clear state
       setToken(null);
       setUser(null);
       
       console.log('✅ Logout successful');
+      return { success: true };
     } catch (error) {
-      console.error('Error during logout:', error);
+      console.error('❌ Error during logout:', error);
+      return { success: false, message: error.message };
+    }
+  };
+
+  // Check if user is authenticated
+  const isAuthenticated = !!user && !!token;
+
+  // Verify token is still valid (can be called periodically)
+  const verifyToken = async () => {
+    if (!token) return false;
+    try {
+      const response = await axios.get(`${API_URL}/debug/token`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      return response.status === 200;
+    } catch (error) {
+      console.log('⚠️ Token verification failed:', error.message);
+      return false;
     }
   };
 
@@ -137,7 +174,8 @@ export const AuthProvider = ({ children }) => {
     login,
     register,
     logout,
-    isAuthenticated: !!user && !!token,
+    isAuthenticated,
+    verifyToken,
   };
 
   return (

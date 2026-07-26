@@ -6,6 +6,7 @@ import { ActivityIndicator, View, Text } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthProvider, useAuth } from './src/hooks/useAuth';
+import { fixPricesInCache } from './src/utils/fixPrices';
 
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
@@ -18,6 +19,8 @@ import DealDetailScreen from './src/screens/DealDetailScreen';
 import TermsScreen from './src/screens/TermsScreen';
 import ChatScreen from './src/screens/ChatScreen';
 import Under200kScreen from './src/screens/Under200kScreen';
+import SubscriptionScreen from './src/screens/SubscriptionScreen';
+import DealChatScreen from './src/screens/DealChatScreen';
 
 // Import the listings data directly
 import listingsData from './src/data/listings.json';
@@ -25,7 +28,7 @@ import listingsData from './src/data/listings.json';
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
-// Preload data function
+// Preload data function with price fix
 const preloadListingsData = async () => {
   try {
     // Check if we already have cached data
@@ -34,11 +37,23 @@ const preloadListingsData = async () => {
       const parsed = JSON.parse(cached);
       if (parsed.length > 0) {
         console.log(`✅ Using cached data: ${parsed.length} listings`);
+        
+        // Fix prices in the cached data
+        console.log('🔧 Checking and fixing prices in cache...');
+        const fixedCount = await fixPricesInCache();
+        if (fixedCount > 0) {
+          console.log(`✅ Fixed ${fixedCount} prices in cache`);
+        } else if (fixedCount === 0) {
+          console.log('✅ All prices are already correct!');
+        } else {
+          console.log('❌ Error fixing prices');
+        }
         return;
       }
     }
 
     // Format the data from JSON
+    console.log('📦 Loading fresh data from JSON...');
     const formatted = listingsData.map(item => ({
       id: item.propertyId || item.id || Math.random().toString(36).substr(2, 9),
       title: item.name || item.title || 'Property',
@@ -83,6 +98,15 @@ const preloadListingsData = async () => {
     // Save to cache
     await AsyncStorage.setItem('listings_cache', JSON.stringify(formatted));
     console.log(`✅ Preloaded ${formatted.length} listings from JSON`);
+    
+    // Fix prices in the newly loaded data
+    console.log('🔧 Fixing prices in fresh data...');
+    const fixedCount = await fixPricesInCache();
+    if (fixedCount > 0) {
+      console.log(`✅ Fixed ${fixedCount} prices in fresh data`);
+    } else if (fixedCount === 0) {
+      console.log('✅ All prices are correct!');
+    }
   } catch (error) {
     console.error('❌ Preload error:', error);
   }
@@ -154,6 +178,16 @@ function AppNavigator() {
             }}
           />
           <Stack.Screen 
+            name="DealChat" 
+            component={DealChatScreen}
+            options={{ 
+              headerShown: true,
+              headerStyle: { backgroundColor: '#2563eb' },
+              headerTintColor: '#fff',
+              title: 'Deal Chat'
+            }}
+          />
+          <Stack.Screen 
             name="Chat" 
             component={ChatScreen}
             options={{ 
@@ -161,6 +195,16 @@ function AppNavigator() {
               headerStyle: { backgroundColor: '#2563eb' },
               headerTintColor: '#fff',
               title: 'Chat'
+            }}
+          />
+          <Stack.Screen 
+            name="Subscription" 
+            component={SubscriptionScreen}
+            options={{ 
+              headerShown: true,
+              headerStyle: { backgroundColor: '#2563eb' },
+              headerTintColor: '#fff',
+              title: 'Subscription'
             }}
           />
         </>

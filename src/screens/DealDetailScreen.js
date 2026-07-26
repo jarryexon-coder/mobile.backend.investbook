@@ -48,11 +48,9 @@ const ImageWithFallback = ({ deal, style, resizeMode = 'cover' }) => {
   const [imageError, setImageError] = useState(false);
   const [loading, setLoading] = useState(true);
   
-  // Get the appropriate image URL
   const imageUrl = getSafeImageUrl(deal);
   const placeholderUrl = getPlaceholderImage(deal);
   
-  // Determine if we should use placeholder (blocked domain or error)
   const usePlaceholder = !imageUrl || isImageBlocked(imageUrl) || imageError;
   const sourceUrl = usePlaceholder ? placeholderUrl : imageUrl;
 
@@ -76,7 +74,6 @@ const ImageWithFallback = ({ deal, style, resizeMode = 'cover' }) => {
         }}
       />
       
-      {/* Professional Overlay with "Official Images Available" message */}
       <View style={styles.imageOverlay}>
         <View style={styles.overlayContent}>
           <View style={styles.iconCircle}>
@@ -92,13 +89,11 @@ const ImageWithFallback = ({ deal, style, resizeMode = 'cover' }) => {
         </View>
       </View>
       
-      {/* Source badge on top right */}
       <View style={styles.sourceBadge}>
         <Icon name="business-outline" size={12} color="white" />
         <Text style={styles.sourceBadgeText}>{deal?.source || 'Listing'}</Text>
       </View>
       
-      {/* Property type badge on bottom */}
       {deal?.propertyType && (
         <View style={styles.propertyTypeBadge}>
           <Text style={styles.propertyTypeBadgeText}>{deal.propertyType}</Text>
@@ -110,14 +105,39 @@ const ImageWithFallback = ({ deal, style, resizeMode = 'cover' }) => {
 
 export default function DealDetailScreen({ route, navigation }) {
   const { deal } = route.params || {};
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const [loading, setLoading] = useState(!deal);
+  const [participantCount, setParticipantCount] = useState(0);
 
   useEffect(() => {
     if (deal) {
       setLoading(false);
+      fetchParticipantCount();
     }
   }, [deal]);
+
+  const fetchParticipantCount = async () => {
+    if (!deal || !token) return;
+    
+    try {
+      const dealId = deal.id || deal.propertyId || deal.listing_id;
+      const response = await fetch(
+        `https://investbook-production.up.railway.app/api/deals/${dealId}/chat/participants`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        }
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        setParticipantCount(data.length || 0);
+      }
+    } catch (error) {
+      // Silent fail - just use 0
+    }
+  };
 
   const getString = (value, fallback = '') => {
     if (value === null || value === undefined) return fallback;
@@ -156,30 +176,21 @@ export default function DealDetailScreen({ route, navigation }) {
   
   const isMockData = deal.source === 'Sample Data' || deal.source === 'Mock Data';
   
-  // Get broker info
   const brokerName = getString(deal.broker || deal.brokerName);
   const brokerCompany = getString(deal.brokerCompany || deal.broker_company);
   const brokerPhone = getString(deal.brokerPhone || deal.contact_phone);
   const brokerEmail = getString(deal.brokerEmail);
 
-  // Get property facts with safety - handle nested objects
   const getSafePropertyFacts = () => {
     if (!deal.propertyFacts) return null;
     if (typeof deal.propertyFacts !== 'object') return null;
     
-    // Filter out invalid entries
     const safeFacts = {};
     Object.entries(deal.propertyFacts).forEach(([key, value]) => {
-      // Skip null/undefined
       if (value === null || value === undefined) return;
-      
-      // Skip empty arrays
       if (Array.isArray(value) && value.length === 0) return;
-      
-      // Skip empty objects
       if (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0) return;
       
-      // Convert to string safely
       let stringValue = '';
       try {
         stringValue = String(value);
@@ -187,7 +198,6 @@ export default function DealDetailScreen({ route, navigation }) {
         return;
       }
       
-      // Skip if empty or placeholder
       if (!stringValue || stringValue === '' || 
           stringValue === 'undefined' || stringValue === 'null' ||
           stringValue === '{}' || stringValue === '[]') {
@@ -201,16 +211,12 @@ export default function DealDetailScreen({ route, navigation }) {
   };
 
   const safePropertyFacts = getSafePropertyFacts();
+  const dealId = deal.id || deal.propertyId || deal.listing_id;
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView style={styles.container}>
-        {/* Use ImageWithFallback component with overlay */}
-        <ImageWithFallback 
-          deal={deal} 
-          style={styles.headerImage} 
-          resizeMode="cover" 
-        />
+        <ImageWithFallback deal={deal} style={styles.headerImage} resizeMode="cover" />
 
         <View style={styles.content}>
           <View style={styles.headerRow}>
@@ -229,7 +235,6 @@ export default function DealDetailScreen({ route, navigation }) {
             </View>
           )}
 
-          {/* Basic Details */}
           <View style={styles.detailsSection}>
             <Text style={styles.sectionTitle}>Details</Text>
             <DetailRow label="Category" value={deal.category} />
@@ -242,7 +247,6 @@ export default function DealDetailScreen({ route, navigation }) {
             <DetailRow label="Revenue" value={deal.revenue} />
           </View>
 
-          {/* Broker Section */}
           {(brokerName || brokerCompany || brokerPhone || brokerEmail) && (
             <View style={styles.brokerSection}>
               <Text style={styles.sectionTitle}>Broker Information</Text>
@@ -263,7 +267,6 @@ export default function DealDetailScreen({ route, navigation }) {
             </View>
           )}
 
-          {/* PROPERTY FACTS - Safely added */}
           {safePropertyFacts && (
             <View style={styles.factsSection}>
               <Text style={styles.sectionTitle}>Property Facts</Text>
@@ -279,7 +282,6 @@ export default function DealDetailScreen({ route, navigation }) {
             </View>
           )}
 
-          {/* Description */}
           {(deal.description || deal.summary) && (
             <View style={styles.descriptionSection}>
               <Text style={styles.sectionTitle}>Description</Text>
@@ -287,7 +289,6 @@ export default function DealDetailScreen({ route, navigation }) {
             </View>
           )}
 
-          {/* Original Listing URL */}
           {deal.url && (
             <TouchableOpacity
               style={styles.urlButton}
@@ -298,21 +299,24 @@ export default function DealDetailScreen({ route, navigation }) {
             </TouchableOpacity>
           )}
 
-          {/* Chat Button */}
-          <TouchableOpacity
-            style={styles.chatButton}
-            onPress={() => {
-              const chatId = deal.id || deal.propertyId || deal.listing_id;
-              navigation.navigate('Chat', { 
-                dealId: String(chatId || ''),
-                dealTitle: safeTitle,
-                userId: user?.id
-              });
-            }}
-          >
-            <Icon name="chatbubble-outline" size={20} color="white" />
-            <Text style={styles.chatButtonText}>Chat about this deal</Text>
-          </TouchableOpacity>
+          {/* Deal Chat Button - ONLY this button */}
+          {dealId && (
+            <TouchableOpacity
+              style={styles.chatButton}
+              onPress={() => {
+                navigation.navigate('DealChat', { 
+                  dealId: String(dealId),
+                  dealTitle: safeTitle,
+                  deal: deal
+                });
+              }}
+            >
+              <Icon name="people-outline" size={20} color="white" />
+              <Text style={styles.chatButtonText}>
+                Deal Chat {participantCount > 0 ? `(${participantCount})` : ''}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -371,7 +375,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(26, 26, 46, 0.5)',
     zIndex: 1,
   },
-  // Professional Overlay Styles
   imageOverlay: {
     position: 'absolute',
     top: 0,
@@ -435,7 +438,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginLeft: 6,
   },
-  // Source badge on top right
   sourceBadge: {
     position: 'absolute',
     top: 16,
@@ -454,7 +456,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginLeft: 6,
   },
-  // Property type badge on bottom
   propertyTypeBadge: {
     position: 'absolute',
     bottom: 16,
@@ -583,11 +584,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#10b981',
+    backgroundColor: '#8b5cf6',
     padding: 14,
     borderRadius: 8,
-    marginTop: 20,
-    marginBottom: 30,
+    marginTop: 12,
+    marginBottom: 20,
   },
   chatButtonText: {
     color: 'white',

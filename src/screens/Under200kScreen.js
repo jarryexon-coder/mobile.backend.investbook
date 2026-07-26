@@ -13,54 +13,16 @@ import {
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useFocusEffect } from '@react-navigation/native';
 import { getUnder200kListings } from '../services/enhancedScraperService';
+import { formatPriceSmart } from '../utils/smartPriceFormatter';
+import { withSubscription, ACCESS_TYPES } from '../components/SubscriptionGuard';
 
-// Memoized Listing Card with DEBUG LOGS
+// Memoized Listing Card
 const ListingCard = React.memo(({ item, onPress }) => {
-  // ===== DEBUG LOG - See what's in the item =====
-  console.log('📋 ListingCard item:', {
-    id: item.id,
-    title: item.title,
-    price: item.price,
-    priceDisplay: item.priceDisplay,
-    priceNumeric: item.priceNumeric,
-    type: item.type,
-  });
-
-  // ===== PRICE DISPLAY LOGIC WITH DEBUG =====
   const displayPrice = useMemo(() => {
-    console.log('💰 Processing price for:', item.title);
-    console.log('   raw price:', item.price);
-    console.log('   priceDisplay:', item.priceDisplay);
-    console.log('   priceNumeric:', item.priceNumeric);
-    
-    // Try priceDisplay first
-    if (item.priceDisplay && item.priceDisplay !== 'Price Not Disclosed') {
-      console.log('✅ Using priceDisplay:', item.priceDisplay);
-      return item.priceDisplay;
-    }
-    
-    // Try price as number
-    if (item.price && typeof item.price === 'number') {
-      const formatted = `$${item.price.toLocaleString()}`;
-      console.log('✅ Formatted from number:', formatted);
-      return formatted;
-    }
-    
-    // Try price as string
-    if (item.price && typeof item.price === 'string') {
-      console.log('✅ Using price string:', item.price);
-      return item.price;
-    }
-    
-    console.log('❌ No valid price found, using fallback');
-    return 'Contact for price';
-  }, [item.price, item.priceDisplay, item.priceNumeric]);
-
-  const isBusiness = useMemo(() => {
-    const result = item.type === 'business';
-    console.log(`🏷️ Type for ${item.title}: ${result ? 'Business' : 'Property'}`);
-    return result;
+    return formatPriceSmart(item);
   }, [item]);
+
+  const isBusiness = useMemo(() => item.type === 'business', [item]);
 
   const location = useMemo(() => {
     const parts = [];
@@ -70,7 +32,6 @@ const ListingCard = React.memo(({ item, onPress }) => {
     return parts.length > 0 ? parts.join(', ') : 'Location available';
   }, [item]);
 
-  // Business details
   const businessDetails = useMemo(() => {
     const details = [];
     if (item.category) details.push(item.category);
@@ -91,7 +52,6 @@ const ListingCard = React.memo(({ item, onPress }) => {
     return details.length > 0 ? details.join(' • ') : null;
   }, [item]);
 
-  // Property details
   const propertyDetails = useMemo(() => {
     const details = [];
     if (item.propertyType) details.push(item.propertyType);
@@ -160,11 +120,9 @@ const ListingCard = React.memo(({ item, onPress }) => {
       </View>
     </TouchableOpacity>
   );
-}, (prevProps, nextProps) => {
-  return prevProps.item?.id === nextProps.item?.id;
 });
 
-export default function Under200kScreen({ navigation }) {
+function Under200kScreen({ navigation }) {
   const [listings, setListings] = useState({ businesses: [], properties: [] });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -176,36 +134,7 @@ export default function Under200kScreen({ navigation }) {
       if (refresh) setRefreshing(true);
       else setLoading(true);
       
-      console.log('🔄 Loading Under $200k listings...');
       const data = await getUnder200kListings();
-      
-      console.log('📊 Raw data from getUnder200kListings:', {
-        businessesCount: data.businesses?.length || 0,
-        propertiesCount: data.properties?.length || 0,
-        total: data.total || 0,
-      });
-      
-      // Debug: Check first property price
-      if (data.properties && data.properties.length > 0) {
-        const firstProp = data.properties[0];
-        console.log('🔍 First property sample:', {
-          title: firstProp.title,
-          price: firstProp.price,
-          priceDisplay: firstProp.priceDisplay,
-          priceNumeric: firstProp.priceNumeric,
-        });
-      }
-      
-      // Debug: Check first business price
-      if (data.businesses && data.businesses.length > 0) {
-        const firstBiz = data.businesses[0];
-        console.log('🔍 First business sample:', {
-          title: firstBiz.title,
-          price: firstBiz.price,
-          priceDisplay: firstBiz.priceDisplay,
-          priceNumeric: firstBiz.priceNumeric,
-        });
-      }
       
       setListings({
         businesses: data.businesses || [],
@@ -246,35 +175,15 @@ export default function Under200kScreen({ navigation }) {
     } else {
       items = listings.properties;
     }
-    
-    console.log(`📋 Filtered items for tab "${activeTab}": ${items.length}`);
-    
-    // Debug: Check first item price in filtered list
-    if (items.length > 0) {
-      const firstItem = items[0];
-      console.log('🔍 First filtered item:', {
-        title: firstItem.title,
-        price: firstItem.price,
-        priceDisplay: firstItem.priceDisplay,
-      });
-    }
-    
     return items.sort((a, b) => (a.price || 0) - (b.price || 0));
   }, [listings, activeTab]);
 
-  const renderItem = useCallback(({ item }) => {
-    console.log('🎨 Rendering item:', {
-      id: item.id,
-      title: item.title,
-      priceDisplay: item.priceDisplay,
-    });
-    return (
-      <ListingCard 
-        item={item} 
-        onPress={(deal) => navigation.navigate('DealDetail', { deal })} 
-      />
-    );
-  }, [navigation]);
+  const renderItem = useCallback(({ item }) => (
+    <ListingCard 
+      item={item} 
+      onPress={(deal) => navigation.navigate('DealDetail', { deal })} 
+    />
+  ), [navigation]);
 
   const keyExtractor = useCallback((item, index) => {
     return item.id?.toString() || index.toString();
@@ -616,3 +525,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 });
+
+// Export with subscription guard - Single default export
+export default withSubscription(Under200kScreen, ACCESS_TYPES.VIEW_LISTINGS);
