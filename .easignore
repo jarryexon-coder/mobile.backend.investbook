@@ -1,0 +1,65 @@
+# Node modules
+node_modules/
+
+# iOS
+ios/Pods/
+ios/build/
+ios/DerivedData/
+ios/InvestBook.xcworkspace/xcuserdata/
+ios/InvestBook.xcodeproj/xcuserdata/
+
+# Android
+android/build/
+android/app/build/
+android/.gradle/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Git
+.git/
+.gitignore
+
+# Large files
+*.tar.gz
+*.zip
+*.dmg
+*.pkg
+*.xcarchive
+
+# Logs
+*.log
+*.tmp
+*.temp
+
+# Backups
+*.backup
+*.bak
+*.orig
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Keep source code
+!src/
+!assets/
+!public/
+!App.js
+!index.js
+!app.json
+!eas.json
+!babel.config.js
+!metro.config.js
+
+# Keep package files
+!package.json
+!package-lock.json

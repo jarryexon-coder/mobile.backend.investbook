@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,70 +8,34 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  TextInput,
   SafeAreaView,
   StatusBar,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useFocusEffect } from '@react-navigation/native';
-import { getPlaceholderImage } from '../utils/imageUtils';
+import { searchProperties, cacheListings } from '../services/api';
+import { getSafeImageUrl, getPlaceholderImage } from '../utils/imageUtils';
 
-// Memoized DealCard to prevent re-renders
-const DealCard = React.memo(({ deal, onPress }) => {
-  const [imageError, setImageError] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  
-  // Memoize the image URL - only computed once
-  const imageUrl = useMemo(() => {
-    if (deal.images && Array.isArray(deal.images) && deal.images.length > 0) {
-      return deal.images[0];
-    }
-    if (deal.imageUrl) return deal.imageUrl;
-    if (deal.image) return deal.image;
-    if (deal.photo) return deal.photo;
-    return null;
-  }, [deal.id]); // Only recompute if deal.id changes
-  
-  // Memoize the placeholder
-  const placeholderUrl = useMemo(() => getPlaceholderImage(deal), [deal.id]);
-  
-  // Determine which URL to show - stable
-  const displayUrl = useMemo(() => {
-    if (imageError || !imageUrl) {
-      return placeholderUrl;
-    }
-    return imageUrl;
-  }, [imageError, imageUrl, placeholderUrl]);
-  
-  const hasRealImage = imageUrl && !imageError;
+const DealCard = ({ deal, onPress }) => {
+  const imageUrl = getSafeImageUrl(deal);
+  const placeholderUrl = getPlaceholderImage(deal);
+  const hasRealImage = imageUrl && !imageUrl.includes('unsplash.com');
   
   return (
-    <TouchableOpacity 
-      style={styles.card} 
-      onPress={() => onPress(deal)}
-      activeOpacity={0.8}
-    >
+    <TouchableOpacity style={styles.card} onPress={() => onPress(deal)}>
       <View style={styles.imageContainer}>
-        {isLoading && (
-          <View style={styles.imageLoader}>
-            <ActivityIndicator size="small" color="#2563eb" />
-          </View>
-        )}
         <Image
-          source={{ uri: displayUrl }}
+          source={{ uri: imageUrl || placeholderUrl }}
           style={styles.cardImage}
           resizeMode="cover"
-          onLoadStart={() => setIsLoading(true)}
-          onLoad={() => setIsLoading(false)}
-          onError={() => {
-            setIsLoading(false);
-            setImageError(true);
+          onError={(e) => {
+            // If image fails, use placeholder
+            e.target.source = { uri: placeholderUrl };
           }}
         />
-        {hasRealImage && !isLoading && (
+        {hasRealImage && (
           <View style={styles.liveBadge}>
-            <Icon name="checkmark-circle" size={10} color="#10b981" />
-            <Text style={styles.liveBadgeText}>Live</Text>
+            <Text style={styles.liveBadgeText}>● Live</Text>
           </View>
         )}
       </View>
@@ -79,7 +43,7 @@ const DealCard = React.memo(({ deal, onPress }) => {
         <Text style={styles.cardTitle} numberOfLines={2}>
           {deal.title || deal.name || 'Property'}
         </Text>
-        <Text style={styles.cardPrice}>{deal.priceDisplay || deal.price || 'Contact for price'}</Text>
+        <Text style={styles.cardPrice}>{deal.price || 'Contact for price'}</Text>
         <Text style={styles.cardLocation} numberOfLines={1}>
           {deal.city || deal.address || 'Location available'}
         </Text>
@@ -87,7 +51,7 @@ const DealCard = React.memo(({ deal, onPress }) => {
           <View style={styles.tag}>
             <Text style={styles.tagText}>{deal.propertyType || 'Commercial'}</Text>
           </View>
-          {deal.source && deal.source !== 'Mock Data' && deal.source !== 'Sample Data' && (
+          {deal.source && deal.source !== 'Mock Data' && (
             <View style={[styles.tag, styles.sourceTag]}>
               <Text style={[styles.tagText, styles.sourceTagText]}>{deal.source}</Text>
             </View>
@@ -96,77 +60,68 @@ const DealCard = React.memo(({ deal, onPress }) => {
       </View>
     </TouchableOpacity>
   );
-}, (prevProps, nextProps) => {
-  // Only re-render if the deal ID changes
-  return prevProps.deal?.id === nextProps.deal?.id;
-});
+};
 
-export default function DealsScreen({ navigation }) {
+export default function DealListScreen({ navigation }) {
   const [deals, setDeals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filteredDeals, setFilteredDeals] = useState([]);
 
-  const loadDeals = useCallback(async (refresh = false) => {
+  const loadDeals = async (refresh = false) => {
     try {
       if (refresh) setRefreshing(true);
       else setLoading(true);
       
-      const cached = await AsyncStorage.getItem('listings_cache');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (parsed && parsed.length > 0) {
-          setDeals(parsed);
-          console.log(`📊 Loaded ${parsed.length} deals from cache`);
-          setLoading(false);
-          setRefreshing(false);
-          return;
-        }
-      }
-      
-      console.log('🔄 No cache found, loading from API...');
-      const { searchProperties } = await import('../services/api');
       const results = await searchProperties('', 'United States');
       
-      if (results && results.length > 0) {
-        setDeals(results);
-        await AsyncStorage.setItem('listings_cache', JSON.stringify(results));
-        console.log(`📊 Loaded ${results.length} deals from API`);
-      } else {
-        setDeals([]);
-      }
+      // Cache the results
+      await cacheListings(results);
+      
+      setDeals(results);
+      setFilteredDeals(results);
+      console.log(`📊 Loaded ${results.length} deals`);
     } catch (error) {
-      console.error('❌ Error loading deals:', error);
-      setDeals([]);
+      console.error('Error loading deals:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      loadDeals();
-    }, [loadDeals])
-  );
+  };
 
   useEffect(() => {
     loadDeals();
   }, []);
 
+  useEffect(() => {
+    if (searchQuery.trim() === '') {
+      setFilteredDeals(deals);
+    } else {
+      const query = searchQuery.toLowerCase().trim();
+      const filtered = deals.filter(deal => {
+        const searchable = [
+          deal.title,
+          deal.name,
+          deal.address,
+          deal.city,
+          deal.propertyType,
+          deal.category,
+          deal.description,
+        ].filter(Boolean).join(' ').toLowerCase();
+        return searchable.includes(query);
+      });
+      setFilteredDeals(filtered);
+    }
+  }, [searchQuery, deals]);
+
   const handleRefresh = useCallback(() => {
     loadDeals(true);
-  }, [loadDeals]);
-
-  const renderDeal = useCallback(({ item }) => (
-    <DealCard 
-      deal={item} 
-      onPress={(deal) => navigation.navigate('DealDetail', { deal })} 
-    />
-  ), [navigation]);
-
-  const keyExtractor = useCallback((item, index) => {
-    return item.id?.toString() || index.toString();
   }, []);
+
+  const renderDeal = ({ item }) => (
+    <DealCard deal={item} onPress={(deal) => navigation.navigate('DealDetail', { deal })} />
+  );
 
   if (loading && deals.length === 0) {
     return (
@@ -182,29 +137,41 @@ export default function DealsScreen({ navigation }) {
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       <View style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Deals</Text>
-          <Text style={styles.headerSubtitle}>{deals.length} deals available</Text>
+          <Text style={styles.headerTitle}>Investment Properties</Text>
+          <Text style={styles.headerSubtitle}>{filteredDeals.length} deals available</Text>
+        </View>
+
+        <View style={styles.searchContainer}>
+          <Icon name="search-outline" size={20} color="#999" style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search properties..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholderTextColor="#999"
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Icon name="close-circle" size={20} color="#999" />
+            </TouchableOpacity>
+          )}
         </View>
 
         <FlatList
-          data={deals}
+          data={filteredDeals}
           renderItem={renderDeal}
-          keyExtractor={keyExtractor}
+          keyExtractor={(item, index) => item.id?.toString() || index.toString()}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
           }
-          maxToRenderPerBatch={10}
-          windowSize={21}
-          removeClippedSubviews={true}
-          initialNumToRender={10}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Icon name="business-outline" size={60} color="#ccc" />
-              <Text style={styles.emptyText}>No deals found</Text>
+              <Text style={styles.emptyText}>No properties found</Text>
               <TouchableOpacity style={styles.retryButton} onPress={handleRefresh}>
-                <Text style={styles.retryButtonText}>Refresh</Text>
+                <Text style={styles.retryButtonText}>Retry</Text>
               </TouchableOpacity>
             </View>
           }
@@ -239,6 +206,26 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 2,
   },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    marginHorizontal: 16,
+    marginVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: '#1a1a1a',
+  },
   listContent: {
     padding: 16,
     paddingBottom: 80,
@@ -264,23 +251,10 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  imageLoader: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f5f5f5',
-    zIndex: 1,
-  },
   liveBadge: {
     position: 'absolute',
     top: 8,
     right: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: 'rgba(16, 185, 129, 0.95)',
     paddingHorizontal: 10,
     paddingVertical: 4,
@@ -290,7 +264,6 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 10,
     fontWeight: '600',
-    marginLeft: 4,
   },
   cardContent: {
     padding: 12,
@@ -315,6 +288,7 @@ const styles = StyleSheet.create({
   cardTags: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    gap: 6,
   },
   tag: {
     backgroundColor: '#e8f0fe',

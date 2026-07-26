@@ -1,116 +1,221 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
+  SafeAreaView,
   ScrollView,
-  ActivityIndicator,
   TouchableOpacity,
+  ActivityIndicator,
   RefreshControl,
+  FlatList,
 } from 'react-native';
-import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { useFocusEffect } from '@react-navigation/native';
+import { getPortfolio } from '../services/portfolioService';
 
-const API_URL = 'https://investbook-production.up.railway.app/api';
+const PortfolioCard = ({ investment, onPress }) => {
+  const [expanded, setExpanded] = useState(false);
+  
+  // Format price
+  const formatAmount = (amount) => {
+    if (!amount) return '$0';
+    return `$${amount.toLocaleString()}`;
+  };
+  
+  return (
+    <TouchableOpacity 
+      style={styles.card}
+      onPress={() => setExpanded(!expanded)}
+      activeOpacity={0.7}
+    >
+      <View style={styles.cardHeader}>
+        <View style={styles.cardLeft}>
+          <View style={[styles.typeIndicator, { backgroundColor: investment.type === 'property' ? '#2563eb' : '#10b981' }]} />
+          <View style={styles.cardInfo}>
+            <Text style={styles.cardTitle} numberOfLines={1}>
+              {investment.title || 'Investment'}
+            </Text>
+            <Text style={styles.cardSubtitle}>
+              {investment.type || 'Property'} • {investment.location || 'N/A'}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.cardRight}>
+          <Text style={styles.cardAmount}>{formatAmount(investment.amount)}</Text>
+          <View style={[styles.statusDot, { backgroundColor: investment.status === 'active' ? '#10b981' : '#f59e0b' }]} />
+        </View>
+      </View>
+      
+      {expanded && (
+        <View style={styles.cardDetails}>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Investment Date</Text>
+            <Text style={styles.detailValue}>{investment.date || 'N/A'}</Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Expected Return</Text>
+            <Text style={[styles.detailValue, styles.returnPositive]}>
+              {investment.return ? `+${investment.return}%` : 'N/A'}
+            </Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Status</Text>
+            <View style={[styles.statusBadge, { backgroundColor: investment.status === 'active' ? '#10b981' : '#f59e0b' }]}>
+              <Text style={styles.statusText}>
+                {investment.status ? investment.status.charAt(0).toUpperCase() + investment.status.slice(1) : 'Active'}
+              </Text>
+            </View>
+          </View>
+          {investment.propertyType && (
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Property Type</Text>
+              <Text style={styles.detailValue}>{investment.propertyType}</Text>
+            </View>
+          )}
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+};
 
 export default function PortfolioScreen({ navigation }) {
-  const [portfolio, setPortfolio] = useState(null);
-  const [holdings, setHoldings] = useState([]);
+  const [portfolio, setPortfolio] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [stats, setStats] = useState({
+    totalValue: 0,
+    totalInvestments: 0,
+    averageReturn: 0,
+  });
 
-  useEffect(() => {
-    fetchPortfolio();
-  }, []);
-
-  const fetchPortfolio = async () => {
+  const loadPortfolio = useCallback(async (refresh = false) => {
     try {
-      setLoading(true);
-      const token = await AsyncStorage.getItem('token');
+      if (refresh) setRefreshing(true);
+      else setLoading(true);
       
-      try {
-        const [portfolioRes, holdingsRes] = await Promise.all([
-          axios.get(`${API_URL}/portfolio/summary`, {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-          axios.get(`${API_URL}/portfolio/holdings`, {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-        ]);
-
-        setPortfolio(portfolioRes.data);
-        setHoldings(holdingsRes.data);
-      } catch (apiError) {
-        // Fallback to mock data if API fails
-        console.log('Using mock portfolio data');
-        setPortfolio({
-          totalValue: 125000,
-          roi: 12.5,
-          totalInvested: 110000,
-          totalReturns: 15000,
-          investedDeals: 8,
-          activeDeals: 6,
+      const data = await getPortfolio();
+      
+      if (data && data.investments && data.investments.length > 0) {
+        setPortfolio(data.investments);
+        setStats({
+          totalValue: data.totalValue || 0,
+          totalInvestments: data.totalInvestments || data.investments.length,
+          averageReturn: data.averageReturn || 0,
         });
-        setHoldings([
+        console.log(`📊 Portfolio loaded: ${data.investments.length} investments`);
+      } else {
+        // Use sample data if no investments
+        const sampleData = [
           {
-            id: 1,
-            title: 'Tech Startup Fund',
-            amount: 25000,
-            returns: 3200,
-            roi: 12.8,
-            industry: 'Technology',
-            status: 'Active',
+            id: '1',
+            title: 'Commercial Office Building',
+            type: 'property',
+            amount: 250000,
+            date: '2024-01-15',
+            return: 12.5,
+            status: 'active',
+            location: 'New York, NY',
+            propertyType: 'Office',
           },
           {
-            id: 2,
-            title: 'Green Energy Project',
-            amount: 18000,
-            returns: 2100,
-            roi: 11.7,
-            industry: 'Green Energy',
-            status: 'Active',
+            id: '2',
+            title: 'Tech Startup Investment',
+            type: 'business',
+            amount: 100000,
+            date: '2024-02-01',
+            return: 18.2,
+            status: 'active',
+            location: 'San Francisco, CA',
+            propertyType: 'Technology',
           },
           {
-            id: 3,
-            title: 'Real Estate REIT',
-            amount: 32000,
-            returns: 2100,
-            roi: 6.6,
-            industry: 'Real Estate',
-            status: 'Completed',
+            id: '3',
+            title: 'Retail Space Portfolio',
+            type: 'property',
+            amount: 500000,
+            date: '2024-03-10',
+            return: 8.7,
+            status: 'pending',
+            location: 'Chicago, IL',
+            propertyType: 'Retail',
           },
-          {
-            id: 4,
-            title: 'Healthcare Innovation',
-            amount: 15000,
-            returns: 1800,
-            roi: 12.0,
-            industry: 'Healthcare',
-            status: 'Active',
-          },
-        ]);
+        ];
+        setPortfolio(sampleData);
+        setStats({
+          totalValue: 850000,
+          totalInvestments: 3,
+          averageReturn: 13.1,
+        });
+        console.log('📊 Using sample portfolio data');
       }
     } catch (error) {
-      console.log('Error fetching portfolio:', error);
+      console.error('❌ Error loading portfolio:', error);
+      // Use sample data on error
+      const sampleData = [
+        {
+          id: '1',
+          title: 'Commercial Office Building',
+          type: 'property',
+          amount: 250000,
+          date: '2024-01-15',
+          return: 12.5,
+          status: 'active',
+          location: 'New York, NY',
+          propertyType: 'Office',
+        },
+        {
+          id: '2',
+          title: 'Tech Startup Investment',
+          type: 'business',
+          amount: 100000,
+          date: '2024-02-01',
+          return: 18.2,
+          status: 'active',
+          location: 'San Francisco, CA',
+          propertyType: 'Technology',
+        },
+        {
+          id: '3',
+          title: 'Retail Space Portfolio',
+          type: 'property',
+          amount: 500000,
+          date: '2024-03-10',
+          return: 8.7,
+          status: 'pending',
+          location: 'Chicago, IL',
+          propertyType: 'Retail',
+        },
+      ];
+      setPortfolio(sampleData);
+      setStats({
+        totalValue: 850000,
+        totalInvestments: 3,
+        averageReturn: 13.1,
+      });
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, []);
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchPortfolio();
-  };
+  useFocusEffect(
+    useCallback(() => {
+      loadPortfolio();
+    }, [loadPortfolio])
+  );
 
-  const getStatusColor = (status) => {
-    return status === 'Active' ? '#22c55e' : '#94a3b8';
-  };
+  const handleRefresh = useCallback(() => {
+    loadPortfolio(true);
+  }, [loadPortfolio]);
 
-  if (loading) {
+  const renderInvestment = useCallback(({ item }) => (
+    <PortfolioCard investment={item} />
+  ), []);
+
+  if (loading && portfolio.length === 0) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={styles.centered}>
         <ActivityIndicator size="large" color="#2563eb" />
         <Text style={styles.loadingText}>Loading portfolio...</Text>
       </View>
@@ -118,252 +223,246 @@ export default function PortfolioScreen({ navigation }) {
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-      }
-    >
-      {/* Portfolio Summary */}
-      <View style={styles.summaryCard}>
-        <Text style={styles.summaryLabel}>Total Portfolio Value</Text>
-        <Text style={styles.summaryValue}>${portfolio?.totalValue?.toLocaleString()}</Text>
-        
-        <View style={styles.roiContainer}>
-          <View style={styles.roiItem}>
-            <Text style={styles.roiLabel}>ROI</Text>
-            <Text style={[styles.roiValue, { color: portfolio?.roi >= 0 ? '#22c55e' : '#ef4444' }]}>
-              {portfolio?.roi > 0 ? '+' : ''}{portfolio?.roi}%
-            </Text>
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView
+        style={styles.container}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+        }
+      >
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Portfolio</Text>
+          <Text style={styles.headerSubtitle}>Track your investments</Text>
+        </View>
+
+        {/* Stats Overview */}
+        <View style={styles.statsContainer}>
+          <View style={styles.statCard}>
+            <Text style={styles.statValue}>${stats.totalValue?.toLocaleString() || '0'}</Text>
+            <Text style={styles.statLabel}>Total Value</Text>
           </View>
-          <View style={styles.roiItem}>
-            <Text style={styles.roiLabel}>Total Returns</Text>
-            <Text style={[styles.roiValue, { color: portfolio?.totalReturns >= 0 ? '#22c55e' : '#ef4444' }]}>
-              ${portfolio?.totalReturns?.toLocaleString()}
+          <View style={styles.statDivider} />
+          <View style={styles.statCard}>
+            <Text style={styles.statValue}>{stats.totalInvestments || 0}</Text>
+            <Text style={styles.statLabel}>Investments</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statCard}>
+            <Text style={[styles.statValue, styles.statPositive]}>
+              {stats.averageReturn ? `+${stats.averageReturn}%` : '0%'}
             </Text>
+            <Text style={styles.statLabel}>Avg. Return</Text>
           </View>
         </View>
 
-        <View style={styles.statsGrid}>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{portfolio?.investedDeals}</Text>
-            <Text style={styles.statLabel}>Invested Deals</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{portfolio?.activeDeals}</Text>
-            <Text style={styles.statLabel}>Active Deals</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>${portfolio?.totalInvested?.toLocaleString()}</Text>
-            <Text style={styles.statLabel}>Total Invested</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Holdings */}
-      <View style={styles.holdingsSection}>
-        <Text style={styles.sectionTitle}>Your Holdings</Text>
-        
-        {holdings.length > 0 ? (
-          holdings.map((holding) => (
-            <TouchableOpacity
-              key={holding.id}
-              style={styles.holdingCard}
-              onPress={() => navigation.navigate('DealDetail', { deal: holding })}
-            >
-              <View style={styles.holdingHeader}>
-                <Text style={styles.holdingTitle}>{holding.title}</Text>
-                <View style={[styles.statusBadge, { backgroundColor: getStatusColor(holding.status) }]}>
-                  <Text style={styles.statusText}>{holding.status}</Text>
-                </View>
-              </View>
-              
-              <View style={styles.holdingDetails}>
-                <View style={styles.holdingDetail}>
-                  <Text style={styles.holdingLabel}>Invested</Text>
-                  <Text style={styles.holdingValue}>${holding.amount.toLocaleString()}</Text>
-                </View>
-                <View style={styles.holdingDetail}>
-                  <Text style={styles.holdingLabel}>Returns</Text>
-                  <Text style={[styles.holdingValue, { color: holding.returns >= 0 ? '#22c55e' : '#ef4444' }]}>
-                    ${holding.returns.toLocaleString()}
-                  </Text>
-                </View>
-                <View style={styles.holdingDetail}>
-                  <Text style={styles.holdingLabel}>ROI</Text>
-                  <Text style={[styles.holdingValue, { color: holding.roi >= 0 ? '#22c55e' : '#ef4444' }]}>
-                    {holding.roi}%
-                  </Text>
-                </View>
-              </View>
-              
-              <Text style={styles.holdingIndustry}>{holding.industry}</Text>
+        {/* Investments List */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Your Investments</Text>
+            <TouchableOpacity onPress={() => navigation.navigate('Deals')}>
+              <Text style={styles.seeAll}>+ Add New</Text>
             </TouchableOpacity>
-          ))
-        ) : (
-          <View style={styles.emptyContainer}>
-            <Icon name="wallet-outline" size={50} color="#ccc" />
-            <Text style={styles.emptyText}>No holdings yet</Text>
-            <Text style={styles.emptySubtext}>Start investing to see your portfolio</Text>
           </View>
-        )}
-      </View>
-    </ScrollView>
+          
+          {portfolio.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Icon name="pie-chart-outline" size={60} color="#ccc" />
+              <Text style={styles.emptyText}>No investments yet</Text>
+              <Text style={styles.emptySubtext}>Start building your portfolio today</Text>
+              <TouchableOpacity 
+                style={styles.startButton}
+                onPress={() => navigation.navigate('Deals')}
+              >
+                <Text style={styles.startButtonText}>Browse Deals</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <FlatList
+              data={portfolio}
+              renderItem={renderInvestment}
+              keyExtractor={(item, index) => item.id?.toString() || index.toString()}
+              scrollEnabled={false}
+              maxToRenderPerBatch={5}
+              initialNumToRender={5}
+            />
+          )}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+  },
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f5f5f5',
-  },
-  loadingText: {
-    marginTop: 12,
-    color: '#666',
-    fontSize: 16,
-  },
-  summaryCard: {
-    backgroundColor: 'white',
-    margin: 16,
+  header: {
     padding: 20,
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
+    backgroundColor: '#fff',
   },
-  summaryLabel: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-  },
-  summaryValue: {
-    fontSize: 32,
+  headerTitle: {
+    fontSize: 28,
     fontWeight: '700',
     color: '#1a1a1a',
-    textAlign: 'center',
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: '#666',
     marginTop: 4,
   },
-  roiContainer: {
+  statsContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
+    backgroundColor: '#fff',
+    margin: 16,
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  roiItem: {
-    alignItems: 'center',
-  },
-  roiLabel: {
-    fontSize: 12,
-    color: '#666',
-  },
-  roiValue: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-  },
-  statItem: {
+  statCard: {
+    flex: 1,
     alignItems: 'center',
   },
   statValue: {
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 20,
+    fontWeight: '700',
     color: '#1a1a1a',
+  },
+  statPositive: {
+    color: '#10b981',
   },
   statLabel: {
     fontSize: 12,
     color: '#666',
-    marginTop: 2,
+    marginTop: 4,
   },
-  holdingsSection: {
-    paddingHorizontal: 16,
-    paddingBottom: 20,
+  statDivider: {
+    width: 1,
+    backgroundColor: '#e0e0e0',
+    marginHorizontal: 12,
+  },
+  section: {
+    padding: 16,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: '#1a1a1a',
-    marginBottom: 12,
   },
-  holdingCard: {
-    backgroundColor: 'white',
+  seeAll: {
+    fontSize: 14,
+    color: '#2563eb',
+    fontWeight: '500',
+  },
+  card: {
+    backgroundColor: '#fff',
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
-    shadowRadius: 4,
+    shadowRadius: 2,
     elevation: 2,
   },
-  holdingHeader: {
+  cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
   },
-  holdingTitle: {
+  cardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  typeIndicator: {
+    width: 4,
+    height: 40,
+    borderRadius: 2,
+    marginRight: 12,
+  },
+  cardInfo: {
+    flex: 1,
+  },
+  cardTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#1a1a1a',
-    flex: 1,
+  },
+  cardSubtitle: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+  },
+  cardRight: {
+    alignItems: 'flex-end',
+  },
+  cardAmount: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#2563eb',
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginTop: 4,
+  },
+  cardDetails: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  detailLabel: {
+    fontSize: 14,
+    color: '#666',
+  },
+  detailValue: {
+    fontSize: 14,
+    color: '#1a1a1a',
+    fontWeight: '500',
+  },
+  returnPositive: {
+    color: '#10b981',
   },
   statusBadge: {
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 2,
     borderRadius: 12,
   },
   statusText: {
+    fontSize: 12,
     color: 'white',
-    fontSize: 12,
     fontWeight: '500',
-  },
-  holdingDetails: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  holdingDetail: {
-    alignItems: 'center',
-  },
-  holdingLabel: {
-    fontSize: 12,
-    color: '#666',
-  },
-  holdingValue: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#1a1a1a',
-    marginTop: 2,
-  },
-  holdingIndustry: {
-    fontSize: 12,
-    color: '#2563eb',
-    marginTop: 4,
   },
   emptyContainer: {
     alignItems: 'center',
-    paddingVertical: 40,
+    justifyContent: 'center',
+    paddingVertical: 60,
+    backgroundColor: '#fff',
+    borderRadius: 12,
   },
   emptyText: {
-    fontSize: 18,
+    fontSize: 16,
     color: '#666',
     marginTop: 12,
   },
@@ -371,5 +470,27 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#999',
     marginTop: 4,
+  },
+  startButton: {
+    marginTop: 16,
+    backgroundColor: '#2563eb',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  startButtonText: {
+    color: 'white',
+    fontWeight: '600',
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  loadingText: {
+    marginTop: 12,
+    color: '#666',
+    fontSize: 16,
   },
 });

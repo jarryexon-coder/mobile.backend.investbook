@@ -9,13 +9,9 @@ import {
   Linking,
   ActivityIndicator,
   SafeAreaView,
-  Dimensions,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../hooks/useAuth';
-import { getSafeImageUrl, getPlaceholderImage, isImageBlocked } from '../utils/imageUtils';
-
-const { width } = Dimensions.get('window');
 
 // SIMPLE DetailRow - Only renders strings
 const DetailRow = ({ label, value }) => {
@@ -39,71 +35,6 @@ const DetailRow = ({ label, value }) => {
     <View style={styles.detailRow}>
       <Text style={styles.detailLabel}>{label}</Text>
       <Text style={styles.detailValue} numberOfLines={3}>{displayValue}</Text>
-    </View>
-  );
-};
-
-// ImageWithFallback component with "Official Images Available" overlay
-const ImageWithFallback = ({ deal, style, resizeMode = 'cover' }) => {
-  const [imageError, setImageError] = useState(false);
-  const [loading, setLoading] = useState(true);
-  
-  // Get the appropriate image URL
-  const imageUrl = getSafeImageUrl(deal);
-  const placeholderUrl = getPlaceholderImage(deal);
-  
-  // Determine if we should use placeholder (blocked domain or error)
-  const usePlaceholder = !imageUrl || isImageBlocked(imageUrl) || imageError;
-  const sourceUrl = usePlaceholder ? placeholderUrl : imageUrl;
-
-  return (
-    <View style={[styles.imageContainer, style]}>
-      {loading && (
-        <View style={styles.imageLoader}>
-          <ActivityIndicator size="large" color="#ffffff" />
-        </View>
-      )}
-      
-      <Image
-        source={{ uri: sourceUrl }}
-        style={[styles.image, style]}
-        resizeMode={resizeMode}
-        onLoadStart={() => setLoading(true)}
-        onLoad={() => setLoading(false)}
-        onError={() => {
-          setLoading(false);
-          setImageError(true);
-        }}
-      />
-      
-      {/* Professional Overlay with "Official Images Available" message */}
-      <View style={styles.imageOverlay}>
-        <View style={styles.overlayContent}>
-          <View style={styles.iconCircle}>
-            <Icon name="images-outline" size={32} color="white" />
-          </View>
-          <Text style={styles.overlayTitle}>Official Images Available</Text>
-          <Text style={styles.overlaySubtitle}>Contact broker for property photos</Text>
-          <View style={styles.overlayDivider} />
-          <View style={styles.overlayBadge}>
-            <Icon name="shield-checkmark-outline" size={14} color="#60a5fa" />
-            <Text style={styles.overlayBadgeText}>Verified Listing</Text>
-          </View>
-        </View>
-      </View>
-      
-      {/* Source badge on top right */}
-      <View style={styles.sourceBadge}>
-        <Icon name="business-outline" size={12} color="white" />
-        <Text style={styles.sourceBadgeText}>{deal?.source || 'Listing'}</Text>
-      </View>
-      
-      {/* Property type badge on bottom */}
-      {deal?.propertyType && (
-        <View style={styles.propertyTypeBadge}>
-          <Text style={styles.propertyTypeBadgeText}>{deal.propertyType}</Text>
-        </View>
-      )}
     </View>
   );
 };
@@ -154,6 +85,9 @@ export default function DealDetailScreen({ route, navigation }) {
   const safeLocation = getString(deal.location || deal.address || deal.city, '');
   const safeSource = getString(deal.source, 'Listing');
   
+  const imageUrl = deal.imageUrl || deal.image || deal.photo || 
+                   (deal.images && deal.images[0]) || null;
+
   const isMockData = deal.source === 'Sample Data' || deal.source === 'Mock Data';
   
   // Get broker info
@@ -205,12 +139,13 @@ export default function DealDetailScreen({ route, navigation }) {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView style={styles.container}>
-        {/* Use ImageWithFallback component with overlay */}
-        <ImageWithFallback 
-          deal={deal} 
-          style={styles.headerImage} 
-          resizeMode="cover" 
-        />
+        {imageUrl ? (
+          <Image source={{ uri: imageUrl }} style={styles.headerImage} resizeMode="cover" />
+        ) : (
+          <View style={[styles.headerImage, styles.placeholderImage]}>
+            <Icon name="business-outline" size={60} color="#ccc" />
+          </View>
+        )}
 
         <View style={styles.content}>
           <View style={styles.headerRow}>
@@ -287,16 +222,16 @@ export default function DealDetailScreen({ route, navigation }) {
             </View>
           )}
 
-          {/* Original Listing URL */}
-          {deal.url && (
-            <TouchableOpacity
-              style={styles.urlButton}
-              onPress={() => Linking.openURL(deal.url)}
-            >
-              <Icon name="open-outline" size={20} color="white" />
-              <Text style={styles.urlButtonText}>View Original Listing</Text>
-            </TouchableOpacity>
-          )}
+{/* Original Listing URL */}
+{deal.url && (
+  <TouchableOpacity
+    style={styles.urlButton}
+    onPress={() => Linking.openURL(deal.url)}
+  >
+    <Icon name="open-outline" size={20} color="white" />
+    <Text style={styles.urlButtonText}>View Original Listing</Text>
+  </TouchableOpacity>
+)}
 
           {/* Chat Button */}
           <TouchableOpacity
@@ -349,131 +284,15 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 12,
   },
-  imageContainer: {
-    width: '100%',
-    height: 280,
-    backgroundColor: '#1a1a2e',
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  image: {
-    width: '100%',
-    height: '100%',
-  },
-  imageLoader: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(26, 26, 46, 0.5)',
-    zIndex: 1,
-  },
-  // Professional Overlay Styles
-  imageOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(26, 26, 46, 0.75)',
-    padding: 20,
-  },
-  overlayContent: {
-    alignItems: 'center',
-    maxWidth: width * 0.85,
-  },
-  iconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: 'rgba(37, 99, 235, 0.3)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(37, 99, 235, 0.2)',
-    marginBottom: 16,
-  },
-  overlayTitle: {
-    color: 'white',
-    fontSize: 22,
-    fontWeight: '700',
-    textAlign: 'center',
-    letterSpacing: 0.5,
-  },
-  overlaySubtitle: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 14,
-    marginTop: 6,
-    textAlign: 'center',
-    letterSpacing: 0.3,
-  },
-  overlayDivider: {
-    width: 40,
-    height: 2,
-    backgroundColor: 'rgba(37, 99, 235, 0.5)',
-    marginTop: 16,
-    marginBottom: 12,
-  },
-  overlayBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(37, 99, 235, 0.2)',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(37, 99, 235, 0.15)',
-  },
-  overlayBadgeText: {
-    color: '#60a5fa',
-    fontSize: 12,
-    fontWeight: '500',
-    marginLeft: 6,
-  },
-  // Source badge on top right
-  sourceBadge: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    zIndex: 2,
-  },
-  sourceBadgeText: {
-    color: 'white',
-    fontSize: 11,
-    fontWeight: '500',
-    marginLeft: 6,
-  },
-  // Property type badge on bottom
-  propertyTypeBadge: {
-    position: 'absolute',
-    bottom: 16,
-    left: 16,
-    backgroundColor: 'rgba(37, 99, 235, 0.9)',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-    zIndex: 2,
-  },
-  propertyTypeBadgeText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 0.5,
-  },
   headerImage: {
     width: '100%',
-    height: 280,
+    height: 250,
+    backgroundColor: '#e0e0e0',
+  },
+  placeholderImage: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f0f0f0',
   },
   content: {
     padding: 16,
@@ -602,24 +421,24 @@ const styles = StyleSheet.create({
     marginTop: 16,
     paddingHorizontal: 40,
   },
+urlButton: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'center',
+  backgroundColor: '#2563eb',
+  padding: 14,
+  borderRadius: 8,
+  marginTop: 20,
+},
+urlButtonText: {
+  color: 'white',
+  fontSize: 16,
+  fontWeight: '600',
+  marginLeft: 8,
+},
   backButtonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: '600',
-  },
-  urlButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#2563eb',
-    padding: 14,
-    borderRadius: 8,
-    marginTop: 20,
-  },
-  urlButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
   },
 });

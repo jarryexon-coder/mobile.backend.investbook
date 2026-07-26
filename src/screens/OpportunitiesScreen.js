@@ -7,412 +7,256 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
-  ScrollView,
-  TextInput,
   SafeAreaView,
   StatusBar,
   Modal,
-  Platform,
+  TextInput,
+  ScrollView,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { fetchAllOpportunities } from '../services/scraperService';
 
-// Improved price formatting - shows full numbers with commas
-const formatPrice = (price) => {
-  if (!price || price === 0) return 'Price Not Disclosed';
-  
+// Filter options
+const FILTER_OPTIONS = {
+  sortOptions: [
+    { label: 'Price: Low to High', value: 'price_asc' },
+    { label: 'Price: High to Low', value: 'price_desc' },
+    { label: 'Newest First', value: 'date_desc' },
+  ],
+  listingTypes: [
+    { label: 'All Types', value: 'all' },
+    { label: 'For Sale', value: 'sale' },
+    { label: 'For Lease', value: 'lease' },
+  ],
+  propertyTypes: [
+    { label: 'All Properties', value: 'all' },
+    { label: 'Office', value: 'office' },
+    { label: 'Retail', value: 'retail' },
+    { label: 'Industrial', value: 'industrial' },
+    { label: 'Land', value: 'land' },
+    { label: 'Multifamily', value: 'multifamily' },
+    { label: 'Commercial', value: 'commercial' },
+  ],
+};
+
+// Helper to parse price
+const parsePrice = (price) => {
+  if (!price) return 0;
+  if (typeof price === 'number') return price;
   if (typeof price === 'string') {
     const cleaned = price.replace(/[$€£,]/g, '').trim();
     const num = parseFloat(cleaned);
-    if (!isNaN(num) && num > 0) {
-      return `$${num.toLocaleString('en-US', {
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0,
-      })}`;
-    }
-    return price;
+    return isNaN(num) ? 0 : num;
   }
-  
-  if (typeof price === 'number') {
-    return `$${price.toLocaleString('en-US', {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    })}`;
-  }
-  
-  return 'Price Not Disclosed';
+  return 0;
 };
 
-// Sort: Listings with prices first, "Price Not Disclosed" at the bottom
-const sortListingsByPrice = (items) => {
-  return [...items].sort((a, b) => {
-    const hasPriceA = a.price && a.price > 0 && a.priceDisplay !== 'Price Not Disclosed';
-    const hasPriceB = b.price && b.price > 0 && b.priceDisplay !== 'Price Not Disclosed';
-    
-    if (hasPriceA && !hasPriceB) return -1;
-    if (!hasPriceA && hasPriceB) return 1;
-    
-    if (hasPriceA && hasPriceB) {
-      return (a.price || 0) - (b.price || 0);
-    }
-    
-    return 0;
-  });
-};
-
-// Helper to get display title - safely handle undefined
-const getDisplayTitle = (item) => {
-  if (!item) return 'Property Listing';
-  if (item.title && typeof item.title === 'string' && item.title !== 'undefined') return item.title;
-  if (item.name && typeof item.name === 'string' && item.name !== 'undefined') return item.name;
-  if (item.listingName && typeof item.listingName === 'string' && item.listingName !== 'undefined') return item.listingName;
-  if (item.address && typeof item.address === 'string' && item.address !== 'undefined') {
-    const addr = item.address;
-    if (addr.includes(',')) {
-      return addr.split(',')[0].trim();
-    }
-    return addr;
-  }
-  if (item.city && item.state) {
-    return `Property in ${item.city}, ${item.state}`;
-  }
-  return 'Property Listing';
-};
-
-// Helper to get display location - safely handle undefined
-const getDisplayLocation = (item) => {
-  if (!item) return 'Location N/A';
-  if (item.location && typeof item.location === 'string' && item.location !== 'undefined') return item.location;
-  if (item.address && typeof item.address === 'string' && item.address !== 'undefined') return item.address;
-  if (item.city && item.state) return `${item.city}, ${item.state}`;
-  if (item.city && typeof item.city === 'string' && item.city !== 'undefined') return item.city;
-  if (item.state && typeof item.state === 'string' && item.state !== 'undefined') return item.state;
-  return 'Location N/A';
-};
-
-// Filter options
-const SORT_OPTIONS = [
-  { label: 'Price: Low to High', value: 'price_asc' },
-  { label: 'Price: High to Low', value: 'price_desc' },
-  { label: 'Newest First', value: 'date_desc' },
-  { label: 'Oldest First', value: 'date_asc' },
-];
-
-const TYPE_OPTIONS = [
-  { label: 'All Types', value: 'all' },
-  { label: 'Businesses', value: 'business' },
-  { label: 'Properties', value: 'property' },
-];
-
-export default function OpportunitiesScreen({ navigation }) {
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [opportunities, setOpportunities] = useState({ businesses: [], realEstate: [] });
-  const [error, setError] = useState(null);
-  const [searchLocation, setSearchLocation] = useState('');
-  const [activeTab, setActiveTab] = useState('all');
-  
-  const [sortBy, setSortBy] = useState('price_asc');
-  const [filterType, setFilterType] = useState('all');
-  const [showFilters, setShowFilters] = useState(false);
-  const [minPrice, setMinPrice] = useState('');
-  const [maxPrice, setMaxPrice] = useState('');
-
-  useEffect(() => {
-    fetchOpportunities();
-  }, []);
-
-  const fetchOpportunities = async (location = searchLocation) => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      let searchParams = {
-        keyword: '',
-        location: '',
-        city: '',
-        state: '',
-        propertyType: 'all',
-        limit: 200,
-        nationwide: true,
-      };
-      
-      if (location && location.trim()) {
-        const locationParts = location.split(',').map(s => s.trim());
-        if (locationParts.length === 2) {
-          searchParams.city = locationParts[0];
-          searchParams.state = locationParts[1];
-          searchParams.location = location;
-          searchParams.nationwide = false;
-        } else {
-          searchParams.location = location;
-          searchParams.nationwide = false;
-        }
+// Memoized Listing Card with more details
+const ListingCard = React.memo(({ item, onPress }) => {
+  // Format price
+  const displayPrice = useMemo(() => {
+    if (item.priceDisplay) return item.priceDisplay;
+    if (item.price) {
+      if (typeof item.price === 'number') {
+        return `$${item.price.toLocaleString()}`;
       }
-      
-      console.log('🔍 Searching with params:', searchParams);
-      const results = await fetchAllOpportunities(searchParams);
-      
-      setOpportunities(results);
-      console.log('📊 Results:', results.businesses?.length, 'businesses,', results.realEstate?.length, 'properties');
-    } catch (error) {
-      console.error('Error fetching:', error);
-      setError('Failed to load opportunities');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+      return item.price;
     }
-  };
+    return 'Contact for price';
+  }, [item.price, item.priceDisplay]);
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchOpportunities(searchLocation);
-  };
-
-  const handleSearch = () => {
-    fetchOpportunities(searchLocation);
-  };
-
-  const getFilteredItems = useCallback(() => {
-    let allItems = [...(opportunities.businesses || []), ...(opportunities.realEstate || [])];
+  // Get property details
+  const propertyDetails = useMemo(() => {
+    const details = [];
     
-    if (activeTab === 'businesses') {
-      allItems = opportunities.businesses || [];
-    } else if (activeTab === 'realestate') {
-      allItems = opportunities.realEstate || [];
+    // Property Type
+    if (item.propertyType) {
+      details.push(item.propertyType);
     }
     
-    if (filterType === 'business') {
-      allItems = allItems.filter(item => 
-        item.category || item.cashFlow || item.revenue || 
-        (item.source && item.source.includes('Business'))
-      );
-    } else if (filterType === 'property') {
-      allItems = allItems.filter(item => 
-        item.propertyType || item.address || item.size || 
-        (item.source && item.source.includes('Property'))
-      );
+    // Size/Lot
+    if (item.size || item.lotSize) {
+      details.push(item.size || item.lotSize);
     }
     
-    const min = parseFloat(minPrice);
-    const max = parseFloat(maxPrice);
-    if (!isNaN(min) && min > 0) {
-      allItems = allItems.filter(item => (item.price || 0) >= min);
-    }
-    if (!isNaN(max) && max > 0) {
-      allItems = allItems.filter(item => (item.price || 0) <= max);
+    // Year Built
+    if (item.yearBuilt) {
+      details.push(`Built ${item.yearBuilt}`);
     }
     
-    allItems = sortListingsByPrice(allItems);
-    
-    switch (sortBy) {
-      case 'price_asc':
-        allItems.sort((a, b) => (a.price || 0) - (b.price || 0));
-        break;
-      case 'price_desc':
-        allItems.sort((a, b) => (b.price || 0) - (a.price || 0));
-        break;
-      case 'date_desc':
-        allItems.sort((a, b) => {
-          const dateA = a.created_at || a.fetchedAt || a.details?.fetchedAt || '';
-          const dateB = b.created_at || b.fetchedAt || b.details?.fetchedAt || '';
-          return dateB.localeCompare(dateA);
-        });
-        break;
-      case 'date_asc':
-        allItems.sort((a, b) => {
-          const dateA = a.created_at || a.fetchedAt || a.details?.fetchedAt || '';
-          const dateB = b.created_at || b.fetchedAt || b.details?.fetchedAt || '';
-          return dateA.localeCompare(dateB);
-        });
-        break;
-      default:
-        break;
+    // Building Class
+    if (item.buildingClass) {
+      details.push(`Class ${item.buildingClass}`);
     }
     
-    return allItems;
-  }, [opportunities, activeTab, filterType, sortBy, minPrice, maxPrice]);
+    return details.length > 0 ? details.join(' • ') : null;
+  }, [item]);
 
-  const filteredItems = useMemo(() => getFilteredItems(), [getFilteredItems]);
-
-  const getListingType = (item) => {
-    if (!item) return { type: 'Opportunity', emoji: '📋' };
-    if (item.propertyType || item.address || item.lotSize || item.buildingSize || 
-        item.size || (item.priceDisplay?.includes('M') && !item.category)) {
-      return { type: 'Property', emoji: '🏢' };
+  // Get business details if it's a business
+  const businessDetails = useMemo(() => {
+    const details = [];
+    
+    if (item.category) {
+      details.push(item.category);
     }
-    if (item.category || item.cashFlow || item.revenue || item.broker) {
-      return { type: 'Business', emoji: '💼' };
+    
+    if (item.cashFlow) {
+      const cashFlow = typeof item.cashFlow === 'number' 
+        ? `$${item.cashFlow.toLocaleString()}` 
+        : item.cashFlow;
+      details.push(`Cash Flow: ${cashFlow}`);
     }
-    return { type: 'Opportunity', emoji: '📋' };
-  };
+    
+    if (item.revenue) {
+      const revenue = typeof item.revenue === 'number' 
+        ? `$${item.revenue.toLocaleString()}` 
+        : item.revenue;
+      details.push(`Revenue: ${revenue}`);
+    }
+    
+    if (item.employees) {
+      details.push(`${item.employees} employees`);
+    }
+    
+    if (item.yearEstablished) {
+      details.push(`Est. ${item.yearEstablished}`);
+    }
+    
+    return details.length > 0 ? details.join(' • ') : null;
+  }, [item]);
 
-  const getSubtype = (item) => {
-    if (!item) return null;
-    if (item.propertyType) return item.propertyType;
-    if (item.category) return item.category;
-    if (item.propertySubtype) return item.propertySubtype;
-    return null;
-  };
+  // Determine if it's a business or property
+  const isBusiness = useMemo(() => {
+    return item.category || item.cashFlow || item.revenue || item.ebitda;
+  }, [item]);
 
-  const getSortLabel = () => {
-    const option = SORT_OPTIONS.find(o => o.value === sortBy);
-    return option ? option.label : 'Sort';
-  };
+  // Get location with more detail
+  const location = useMemo(() => {
+    const parts = [];
+    if (item.address) parts.push(item.address);
+    if (item.city) parts.push(item.city);
+    if (item.state) parts.push(item.state);
+    return parts.length > 0 ? parts.join(', ') : 'Location available';
+  }, [item]);
 
-  const getTypeLabel = () => {
-    const option = TYPE_OPTIONS.find(o => o.value === filterType);
-    return option ? option.label : 'Type';
-  };
-
-const renderItem = ({ item }) => {
-  // Safely get values with fallbacks
-  const displayPrice = item?.priceDisplay || formatPrice(item?.price) || 'Price Not Disclosed';
-  const hasValidPrice = item?.price && item.price > 0 && displayPrice !== 'Price Not Disclosed';
-  const listingInfo = getListingType(item);
-  const subtype = getSubtype(item);
-  const title = getDisplayTitle(item);
-  const location = getDisplayLocation(item);
-  
-  // Check if this has a valid ID for chat - safely
-  const isMockDeal = item?.id && typeof item.id === 'string' && (item.id.startsWith('mock-') || item.id.startsWith('prop-'));
-  const isSampleData = item?.source === 'Sample Data' || item?.source === 'Mock Data';
-  const hasValidId = item?.id && typeof item.id === 'string' && !item.id.startsWith('mock-') && !item.id.startsWith('prop-');
-  const hasPropertyId = item?.propertyId || item?.listing_id;
-  const canChat = (hasValidId || hasPropertyId || item?.hasValidId) && !isMockDeal && !isSampleData;
-  const chatId = item?.id || item?.propertyId || item?.listing_id;
-  
-  // SANITIZE THE DEAL DATA - Convert everything to safe strings/numbers
-  const safeDealData = {
-    id: String(item?.id || item?.propertyId || item?.listing_id || ''),
-    title: String(title || 'Property Listing'),
-    price: typeof item?.price === 'number' ? item.price : 0,
-    priceDisplay: String(displayPrice || 'Price Not Disclosed'),
-    location: String(location || ''),
-    address: String(item?.address || ''),
-    city: String(item?.city || ''),
-    state: String(item?.state || ''),
-    country: String(item?.country || ''),
-    propertyType: String(item?.propertyType || ''),
-    category: String(item?.category || ''),
-    source: String(item?.source || 'Listing'),
-    url: String(item?.url || ''),
-    description: String(item?.description || item?.summary || ''),
-    imageUrl: item?.imageUrl || item?.image || item?.photo || null,
-    broker: String(item?.broker || item?.brokerName || ''),
-    brokerPhone: String(item?.brokerPhone || item?.contact_phone || ''),
-    brokerEmail: String(item?.brokerEmail || ''),
-    size: String(item?.size || item?.totalSize || item?.buildingSize || ''),
-    lotSize: String(item?.lotSize || ''),
-    yearBuilt: String(item?.yearBuilt || ''),
-    cashFlow: typeof item?.cashFlow === 'number' ? item.cashFlow : 0,
-    revenue: typeof item?.revenue === 'number' ? item.revenue : 0,
-    ebitda: typeof item?.ebitda === 'number' ? item.ebitda : 0,
-    yearEstablished: String(item?.yearEstablished || ''),
-    employees: String(item?.employees || ''),
-    buildingSize: String(item?.buildingSize || ''),
-    propertyId: String(item?.propertyId || ''),
-    listing_id: String(item?.listing_id || ''),
-    hasValidId: true,
-    details: item?.details || {},
-  };
-  
   return (
-    <View style={[styles.card, !hasValidPrice && styles.noPriceCard]}>
-      <TouchableOpacity
-        style={styles.cardContent}
-        onPress={() => {
-          // Pass the sanitized deal data
-          navigation.navigate('DealDetail', { deal: safeDealData });
-        }}
-      >
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle} numberOfLines={2}>
-            {String(title || 'Property Listing')}
-          </Text>
-          <Text style={[styles.cardPrice, !hasValidPrice && styles.noPrice]}>
-            {String(displayPrice || 'Price Not Disclosed')}
+    <TouchableOpacity 
+      style={styles.card} 
+      onPress={() => onPress(item)}
+      activeOpacity={0.7}
+    >
+      <View style={styles.cardHeader}>
+        <View style={styles.typeBadge}>
+          <Text style={styles.typeBadgeText}>
+            {isBusiness ? '💼 Business' : '🏢 Property'}
           </Text>
         </View>
-        
-        <View style={styles.cardDetails}>
-          <View style={styles.typeContainer}>
-            <Text style={styles.cardType}>
-              {listingInfo.emoji} {listingInfo.type}
-            </Text>
-            {subtype && typeof subtype === 'string' && (
-              <Text style={styles.cardSubtype}> • {subtype}</Text>
-            )}
-          </View>
+        <Text style={styles.cardPrice}>{displayPrice}</Text>
+      </View>
+      
+      <Text style={styles.cardTitle} numberOfLines={2}>
+        {item.title || item.name || 'Property Listing'}
+      </Text>
+      
+      <Text style={styles.cardLocation} numberOfLines={2}>
+        📍 {location}
+      </Text>
+      
+      {/* Property Details */}
+      {!isBusiness && propertyDetails && (
+        <View style={styles.detailsContainer}>
+          <Text style={styles.detailsText} numberOfLines={2}>
+            {propertyDetails}
+          </Text>
         </View>
-        
-        <Text style={styles.cardLocation}>
-          📍 {String(location || 'N/A')}
-        </Text>
-        
-        {!hasValidPrice && (
-          <View style={styles.priceBadge}>
-            <Text style={styles.priceBadgeText}>💵 Price on Request</Text>
-          </View>
-        )}
-        
-        {/* Chat button on card */}
-        {canChat && chatId && (
-          <TouchableOpacity
-            style={styles.chatButtonOnCard}
-            onPress={() => {
-              navigation.navigate('Chat', { 
-                dealId: String(chatId),
-                dealTitle: String(title || 'Deal'),
-                price: typeof item?.price === 'number' ? item.price : 0,
-                location: String(location || ''),
-                propertyType: String(item?.propertyType || item?.category || '')
-              });
-            }}
-          >
-            <Icon name="chatbubble-outline" size={14} color="#10b981" />
-            <Text style={styles.chatButtonOnCardText}>💬 Chat</Text>
-          </TouchableOpacity>
-        )}
-      </TouchableOpacity>
-    </View>
+      )}
+      
+      {/* Business Details */}
+      {isBusiness && businessDetails && (
+        <View style={styles.detailsContainer}>
+          <Text style={styles.detailsText} numberOfLines={2}>
+            {businessDetails}
+          </Text>
+        </View>
+      )}
+      
+      {/* Additional Info */}
+      <View style={styles.cardFooter}>
+        <View style={styles.footerLeft}>
+          <Text style={styles.cardSource}>{item.source || 'Listing'}</Text>
+          {item.broker && (
+            <Text style={styles.brokerName}>• {item.broker}</Text>
+          )}
+        </View>
+        <Icon name="chevron-forward" size={16} color="#2563eb" />
+      </View>
+    </TouchableOpacity>
   );
-};
+}, (prevProps, nextProps) => {
+  return prevProps.item?.id === nextProps.item?.id;
+});
 
-  // Filter Modal
-  const FilterModal = () => (
+// Filter Modal Component
+const FilterModal = ({ visible, onClose, filters, onApply }) => {
+  const [selectedSort, setSelectedSort] = useState(filters.sort || 'price_asc');
+  const [selectedType, setSelectedType] = useState(filters.listingType || 'all');
+  const [selectedProperty, setSelectedProperty] = useState(filters.propertyType || 'all');
+  const [minPrice, setMinPrice] = useState(filters.minPrice ? String(filters.minPrice) : '');
+  const [maxPrice, setMaxPrice] = useState(filters.maxPrice ? String(filters.maxPrice) : '');
+
+  const handleApply = () => {
+    onApply({
+      sort: selectedSort,
+      listingType: selectedType,
+      propertyType: selectedProperty,
+      minPrice: minPrice ? parseFloat(minPrice) : 0,
+      maxPrice: maxPrice ? parseFloat(maxPrice) : 0,
+    });
+    onClose();
+  };
+
+  const handleReset = () => {
+    setSelectedSort('price_asc');
+    setSelectedType('all');
+    setSelectedProperty('all');
+    setMinPrice('');
+    setMaxPrice('');
+  };
+
+  return (
     <Modal
-      visible={showFilters}
+      visible={visible}
       transparent={true}
       animationType="slide"
-      onRequestClose={() => setShowFilters(false)}
+      onRequestClose={onClose}
     >
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>🔍 Filters</Text>
-            <TouchableOpacity onPress={() => setShowFilters(false)}>
-              <Text style={styles.modalClose}>✕</Text>
+            <Text style={styles.modalTitle}>Filter Opportunities</Text>
+            <TouchableOpacity onPress={onClose}>
+              <Icon name="close" size={24} color="#666" />
             </TouchableOpacity>
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false}>
+            {/* Sort Options */}
             <View style={styles.filterSection}>
               <Text style={styles.filterLabel}>Sort By</Text>
               <View style={styles.filterOptions}>
-                {SORT_OPTIONS.map((option) => (
+                {FILTER_OPTIONS.sortOptions.map((option) => (
                   <TouchableOpacity
                     key={option.value}
                     style={[
                       styles.filterChip,
-                      sortBy === option.value && styles.filterChipActive,
+                      selectedSort === option.value && styles.filterChipActive,
                     ]}
-                    onPress={() => setSortBy(option.value)}
+                    onPress={() => setSelectedSort(option.value)}
                   >
                     <Text
                       style={[
                         styles.filterChipText,
-                        sortBy === option.value && styles.filterChipTextActive,
+                        selectedSort === option.value && styles.filterChipTextActive,
                       ]}
                     >
                       {option.label}
@@ -422,22 +266,23 @@ const renderItem = ({ item }) => {
               </View>
             </View>
 
+            {/* Listing Type */}
             <View style={styles.filterSection}>
-              <Text style={styles.filterLabel}>Type</Text>
+              <Text style={styles.filterLabel}>Listing Type</Text>
               <View style={styles.filterOptions}>
-                {TYPE_OPTIONS.map((option) => (
+                {FILTER_OPTIONS.listingTypes.map((option) => (
                   <TouchableOpacity
                     key={option.value}
                     style={[
                       styles.filterChip,
-                      filterType === option.value && styles.filterChipActive,
+                      selectedType === option.value && styles.filterChipActive,
                     ]}
-                    onPress={() => setFilterType(option.value)}
+                    onPress={() => setSelectedType(option.value)}
                   >
                     <Text
                       style={[
                         styles.filterChipText,
-                        filterType === option.value && styles.filterChipTextActive,
+                        selectedType === option.value && styles.filterChipTextActive,
                       ]}
                     >
                       {option.label}
@@ -447,42 +292,98 @@ const renderItem = ({ item }) => {
               </View>
             </View>
 
+            {/* Property Type */}
+            <View style={styles.filterSection}>
+              <Text style={styles.filterLabel}>Property Type</Text>
+              <View style={styles.filterOptions}>
+                {FILTER_OPTIONS.propertyTypes.map((option) => (
+                  <TouchableOpacity
+                    key={option.value}
+                    style={[
+                      styles.filterChip,
+                      selectedProperty === option.value && styles.filterChipActive,
+                    ]}
+                    onPress={() => setSelectedProperty(option.value)}
+                  >
+                    <Text
+                      style={[
+                        styles.filterChipText,
+                        selectedProperty === option.value && styles.filterChipTextActive,
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Price Range with better labels */}
             <View style={styles.filterSection}>
               <Text style={styles.filterLabel}>Price Range</Text>
+              <Text style={styles.filterSubLabel}>Leave empty for no limit</Text>
               <View style={styles.priceRangeContainer}>
-                <TextInput
-                  style={styles.priceInput}
-                  placeholder="Min $"
-                  value={minPrice}
-                  onChangeText={setMinPrice}
-                  keyboardType="numeric"
-                />
+                <View style={styles.priceInputWrapper}>
+                  <Text style={styles.priceInputLabel}>$</Text>
+                  <TextInput
+                    style={styles.priceInput}
+                    placeholder="Min"
+                    value={minPrice}
+                    onChangeText={setMinPrice}
+                    keyboardType="numeric"
+                    placeholderTextColor="#999"
+                  />
+                </View>
                 <Text style={styles.priceRangeSeparator}>to</Text>
-                <TextInput
-                  style={styles.priceInput}
-                  placeholder="Max $"
-                  value={maxPrice}
-                  onChangeText={setMaxPrice}
-                  keyboardType="numeric"
-                />
+                <View style={styles.priceInputWrapper}>
+                  <Text style={styles.priceInputLabel}>$</Text>
+                  <TextInput
+                    style={styles.priceInput}
+                    placeholder="Max"
+                    value={maxPrice}
+                    onChangeText={setMaxPrice}
+                    keyboardType="numeric"
+                    placeholderTextColor="#999"
+                  />
+                </View>
               </View>
             </View>
 
+            {/* Quick price presets */}
+            <View style={styles.filterSection}>
+              <Text style={styles.filterLabel}>Quick Presets</Text>
+              <View style={styles.filterOptions}>
+                {[
+                  { label: 'Under $500k', value: 500000 },
+                  { label: 'Under $1M', value: 1000000 },
+                  { label: 'Under $5M', value: 5000000 },
+                  { label: 'Under $10M', value: 10000000 },
+                ].map((preset) => (
+                  <TouchableOpacity
+                    key={preset.value}
+                    style={[styles.filterChip, styles.presetChip]}
+                    onPress={() => {
+                      setMinPrice('');
+                      setMaxPrice(String(preset.value));
+                    }}
+                  >
+                    <Text style={styles.filterChipText}>{preset.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Action Buttons */}
             <View style={styles.modalActions}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.resetButton]}
-                onPress={() => {
-                  setSortBy('price_asc');
-                  setFilterType('all');
-                  setMinPrice('');
-                  setMaxPrice('');
-                }}
+                onPress={handleReset}
               >
                 <Text style={styles.resetButtonText}>Reset All</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalButton, styles.applyButton]}
-                onPress={() => setShowFilters(false)}
+                onPress={handleApply}
               >
                 <Text style={styles.applyButtonText}>Apply Filters</Text>
               </TouchableOpacity>
@@ -492,87 +393,252 @@ const renderItem = ({ item }) => {
       </View>
     </Modal>
   );
+};
 
-  if (loading) {
+export default function OpportunitiesScreen({ navigation }) {
+  const [opportunities, setOpportunities] = useState({ businesses: [], realEstate: [] });
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState('all');
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState({
+    sort: 'price_asc',
+    listingType: 'all',
+    propertyType: 'all',
+    minPrice: 0,
+    maxPrice: 0, // 0 means no filter
+  });
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const loadOpportunities = useCallback(async (refresh = false) => {
+    try {
+      if (refresh) setRefreshing(true);
+      else setLoading(true);
+      
+      const results = await fetchAllOpportunities({
+        keyword: searchQuery,
+        location: '',
+        limit: 200,
+        nationwide: true,
+      });
+      
+      setOpportunities(results);
+      console.log(`📊 Loaded: ${results.businesses?.length || 0} businesses, ${results.realEstate?.length || 0} properties`);
+    } catch (error) {
+      console.error('❌ Error loading opportunities:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [searchQuery]);
+
+  useEffect(() => {
+    loadOpportunities();
+  }, [loadOpportunities]);
+
+  const handleRefresh = useCallback(() => {
+    loadOpportunities(true);
+  }, [loadOpportunities]);
+
+  // Filter and sort items
+  const filteredItems = useMemo(() => {
+    let items = [];
+    if (activeTab === 'all') {
+      items = [...(opportunities.businesses || []), ...(opportunities.realEstate || [])];
+    } else if (activeTab === 'businesses') {
+      items = opportunities.businesses || [];
+    } else {
+      items = opportunities.realEstate || [];
+    }
+
+    // Apply price filter - only if values are set (> 0)
+    if (filters.minPrice > 0) {
+      items = items.filter(item => {
+        const price = parsePrice(item.priceNumeric || item.price || 0);
+        return price >= filters.minPrice;
+      });
+    }
+    if (filters.maxPrice > 0) {
+      items = items.filter(item => {
+        const price = parsePrice(item.priceNumeric || item.price || 0);
+        return price <= filters.maxPrice;
+      });
+    }
+
+    // Apply property type filter
+    if (filters.propertyType !== 'all') {
+      items = items.filter(item => {
+        const type = (item.propertyType || '').toLowerCase();
+        return type.includes(filters.propertyType);
+      });
+    }
+
+    // Apply sorting
+    switch (filters.sort) {
+      case 'price_asc':
+        items.sort((a, b) => parsePrice(a.priceNumeric || a.price || 0) - parsePrice(b.priceNumeric || b.price || 0));
+        break;
+      case 'price_desc':
+        items.sort((a, b) => parsePrice(b.priceNumeric || b.price || 0) - parsePrice(a.priceNumeric || a.price || 0));
+        break;
+      case 'date_desc':
+        items.sort((a, b) => {
+          const dateA = a.dateUpdated || a.created_at || '';
+          const dateB = b.dateUpdated || b.created_at || '';
+          return dateB.localeCompare(dateA);
+        });
+        break;
+      default:
+        break;
+    }
+
+    return items;
+  }, [opportunities, activeTab, filters]);
+
+  const renderItem = useCallback(({ item }) => (
+    <ListingCard 
+      item={item} 
+      onPress={(deal) => navigation.navigate('DealDetail', { deal })} 
+    />
+  ), [navigation]);
+
+  const keyExtractor = useCallback((item, index) => {
+    return item.id?.toString() || index.toString();
+  }, []);
+
+  const getFilterCount = useMemo(() => {
+    let count = 0;
+    if (filters.sort !== 'price_asc') count++;
+    if (filters.listingType !== 'all') count++;
+    if (filters.propertyType !== 'all') count++;
+    if (filters.minPrice > 0) count++;
+    if (filters.maxPrice > 0) count++;
+    return count;
+  }, [filters]);
+
+  if (loading && filteredItems.length === 0) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={styles.centered}>
         <ActivityIndicator size="large" color="#2563eb" />
         <Text style={styles.loadingText}>Loading opportunities...</Text>
       </View>
     );
   }
 
-  if (error) {
-    return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorEmoji}>😕</Text>
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={() => fetchOpportunities(searchLocation)}>
-          <Text style={styles.retryButtonText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       <View style={styles.container}>
-        <View style={styles.searchContainer}>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search location (e.g., Austin, TX)"
-            value={searchLocation}
-            onChangeText={setSearchLocation}
-            onSubmitEditing={handleSearch}
-            returnKeyType="search"
-          />
-          <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
-            <Text style={styles.searchButtonText}>🔍</Text>
-          </TouchableOpacity>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Opportunities</Text>
+          <Text style={styles.headerSubtitle}>{filteredItems.length} opportunities available</Text>
         </View>
 
+        {/* Search Bar */}
+        <View style={styles.searchContainer}>
+          <Icon name="search-outline" size={20} color="#999" style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search opportunities..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            onSubmitEditing={() => loadOpportunities()}
+            placeholderTextColor="#999"
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Icon name="close-circle" size={20} color="#999" />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Filter Bar */}
         <View style={styles.filterBar}>
           <TouchableOpacity
-            style={styles.filterButton}
+            style={[styles.filterButton, getFilterCount > 0 && styles.filterButtonActive]}
             onPress={() => setShowFilters(true)}
           >
-            <Text style={styles.filterButtonText}>⚙️ Filters</Text>
-            {(sortBy !== 'price_asc' || filterType !== 'all' || minPrice || maxPrice) && (
-              <View style={styles.filterBadge}>
-                <Text style={styles.filterBadgeText}>•</Text>
+            <Icon name="options-outline" size={18} color={getFilterCount > 0 ? '#2563eb' : '#666'} />
+            <Text style={[styles.filterButtonText, getFilterCount > 0 && styles.filterButtonTextActive]}>
+              Filters
+            </Text>
+            {getFilterCount > 0 && (
+              <View style={styles.filterCountBadge}>
+                <Text style={styles.filterCountText}>{getFilterCount}</Text>
               </View>
             )}
           </TouchableOpacity>
-          <Text style={styles.filterSummary}>
-            {filteredItems.length} results
-          </Text>
+          
+          <View style={styles.filterTabs}>
+            {['all', 'businesses', 'realestate'].map((tab) => (
+              <TouchableOpacity
+                key={tab}
+                style={[styles.filterTab, activeTab === tab && styles.filterTabActive]}
+                onPress={() => setActiveTab(tab)}
+              >
+                <Text style={[styles.filterTabText, activeTab === tab && styles.filterTabTextActive]}>
+                  {tab === 'all' ? 'All' : tab === 'businesses' ? 'Businesses' : 'Properties'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
-        <FilterModal />
-
-        <View style={styles.resultCountContainer}>
+        {/* Results Count */}
+        <View style={styles.resultCount}>
           <Text style={styles.resultCountText}>
             Showing {filteredItems.length} results
-            {searchLocation ? ` in ${searchLocation}` : ' nationwide'}
-            {sortBy !== 'price_asc' && ` • ${getSortLabel()}`}
-            {filterType !== 'all' && ` • ${getTypeLabel()}`}
+            {searchQuery ? ` for "${searchQuery}"` : ''}
+            {filters.minPrice > 0 && ` • Min $${filters.minPrice.toLocaleString()}`}
+            {filters.maxPrice > 0 && ` • Max $${filters.maxPrice.toLocaleString()}`}
           </Text>
         </View>
+
+        {/* Filter Modal */}
+        <FilterModal
+          visible={showFilters}
+          onClose={() => setShowFilters(false)}
+          filters={filters}
+          onApply={(newFilters) => {
+            setFilters(newFilters);
+            console.log('🔍 Filters applied:', newFilters);
+          }}
+        />
 
         <FlatList
           data={filteredItems}
           renderItem={renderItem}
-          keyExtractor={(item, index) => item?.id || `item-${index}`}
+          keyExtractor={keyExtractor}
           contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
           }
+          maxToRenderPerBatch={10}
+          windowSize={10}
+          removeClippedSubviews={true}
+          initialNumToRender={10}
+          updateCellsBatchingPeriod={50}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyEmoji}>📭</Text>
-              <Text style={styles.emptyText}>No results found</Text>
+              <Icon name="business-outline" size={60} color="#ccc" />
+              <Text style={styles.emptyText}>No opportunities found</Text>
               <Text style={styles.emptySubtext}>Try adjusting your filters</Text>
+              <TouchableOpacity 
+                style={styles.resetFiltersButton}
+                onPress={() => {
+                  setFilters({
+                    sort: 'price_asc',
+                    listingType: 'all',
+                    propertyType: 'all',
+                    minPrice: 0,
+                    maxPrice: 0,
+                  });
+                  setSearchQuery('');
+                }}
+              >
+                <Text style={styles.resetFiltersText}>Reset Filters</Text>
+              </TouchableOpacity>
             </View>
           }
         />
@@ -584,240 +650,199 @@ const renderItem = ({ item }) => {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#fff',
   },
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
-    paddingTop: 4,
+    backgroundColor: '#f8f9fa',
+  },
+  header: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
+    backgroundColor: '#fff',
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#1a1a1a',
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 2,
   },
   searchContainer: {
     flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    gap: 8,
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    marginHorizontal: 16,
+    marginVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  searchIcon: {
+    marginRight: 8,
   },
   searchInput: {
     flex: 1,
-    backgroundColor: 'white',
-    borderRadius: 8,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    fontSize: 14,
-  },
-  searchButton: {
-    backgroundColor: '#2563eb',
-    borderRadius: 8,
-    padding: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: 44,
-  },
-  searchButtonText: {
-    fontSize: 18,
-    color: 'white',
+    paddingVertical: 10,
+    fontSize: 16,
+    color: '#1a1a1a',
   },
   filterBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 6,
+    paddingVertical: 8,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
   },
   filterButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'white',
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
+    backgroundColor: '#f5f5f5',
+  },
+  filterButtonActive: {
+    backgroundColor: '#e8f0fe',
   },
   filterButtonText: {
-    fontSize: 13,
-    color: '#333',
-    fontWeight: '500',
-  },
-  filterBadge: {
+    fontSize: 14,
+    color: '#666',
     marginLeft: 6,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#2563eb',
   },
-  filterBadgeText: {
+  filterButtonTextActive: {
+    color: '#2563eb',
+  },
+  filterCountBadge: {
+    marginLeft: 6,
+    backgroundColor: '#2563eb',
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    minWidth: 18,
+    alignItems: 'center',
+  },
+  filterCountText: {
     color: 'white',
     fontSize: 10,
-    textAlign: 'center',
+    fontWeight: '600',
   },
-  filterSummary: {
-    fontSize: 13,
+  filterTabs: {
+    flexDirection: 'row',
+  },
+  filterTab: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginLeft: 6,
+    borderRadius: 16,
+    backgroundColor: '#f5f5f5',
+  },
+  filterTabActive: {
+    backgroundColor: '#2563eb',
+  },
+  filterTabText: {
+    fontSize: 12,
     color: '#666',
+    fontWeight: '500',
   },
-  resultCountContainer: {
+  filterTabTextActive: {
+    color: 'white',
+  },
+  resultCount: {
     paddingHorizontal: 16,
-    paddingVertical: 2,
+    paddingVertical: 6,
+    backgroundColor: '#f8f9fa',
   },
   resultCountText: {
     fontSize: 12,
-    color: '#666',
-    fontStyle: 'italic',
+    color: '#999',
   },
   listContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 20,
-    paddingTop: 2,
+    padding: 16,
+    paddingBottom: 80,
   },
   card: {
-    backgroundColor: 'white',
-    borderRadius: 10,
-    marginBottom: 8,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
-    shadowRadius: 3,
+    shadowRadius: 2,
     elevation: 2,
-    overflow: 'hidden',
-  },
-  noPriceCard: {
-    opacity: 0.7,
-    borderWidth: 1,
-    borderColor: '#f0f0f0',
-  },
-  cardContent: {
-    padding: 12,
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 4,
+    alignItems: 'center',
+    marginBottom: 8,
   },
-  cardTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    flex: 1,
-    marginRight: 8,
+  typeBadge: {
+    backgroundColor: '#e8f0fe',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  typeBadgeText: {
+    fontSize: 12,
+    color: '#2563eb',
+    fontWeight: '500',
   },
   cardPrice: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '700',
     color: '#2563eb',
   },
-  noPrice: {
-    color: '#999',
-    fontSize: 12,
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1a1a1a',
+    marginBottom: 4,
   },
-  cardDetails: {
+  cardLocation: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 6,
+  },
+  detailsContainer: {
+    backgroundColor: '#f8f9fa',
+    padding: 8,
+    borderRadius: 6,
+    marginBottom: 8,
+  },
+  detailsText: {
+    fontSize: 13,
+    color: '#555',
+    lineHeight: 18,
+  },
+  cardFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 2,
+    marginTop: 4,
   },
-  typeContainer: {
+  footerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
   },
-  cardType: {
-    fontSize: 12,
-    color: '#666',
-  },
-  cardSubtype: {
-    fontSize: 12,
-    color: '#888',
-  },
-  cardLocation: {
+  cardSource: {
     fontSize: 12,
     color: '#999',
-    marginTop: 2,
   },
-  priceBadge: {
-    marginTop: 4,
-    backgroundColor: '#fef3c7',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-    alignSelf: 'flex-start',
-  },
-  priceBadgeText: {
-    fontSize: 10,
-    color: '#92400e',
-  },
-  chatButtonOnCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 6,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    backgroundColor: '#f0fdf4',
-    borderRadius: 6,
-    alignSelf: 'flex-start',
-  },
-  chatButtonOnCardText: {
+  brokerName: {
     fontSize: 12,
-    color: '#10b981',
-    marginLeft: 4,
-    fontWeight: '500',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 12,
     color: '#666',
-    fontSize: 16,
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  errorEmoji: {
-    fontSize: 50,
-  },
-  errorText: {
-    fontSize: 16,
-    color: '#666',
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  retryButton: {
-    marginTop: 16,
-    backgroundColor: '#2563eb',
-    paddingHorizontal: 24,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingTop: 60,
-  },
-  emptyEmoji: {
-    fontSize: 50,
-  },
-  emptyText: {
-    fontSize: 16,
-    color: '#666',
-    marginTop: 8,
-  },
-  emptySubtext: {
-    fontSize: 13,
-    color: '#999',
-    marginTop: 4,
+    marginLeft: 6,
   },
   modalOverlay: {
     flex: 1,
@@ -842,11 +867,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#1a1a1a',
   },
-  modalClose: {
-    fontSize: 24,
-    color: '#666',
-    padding: 8,
-  },
   filterSection: {
     marginBottom: 20,
   },
@@ -854,12 +874,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#333',
+    marginBottom: 4,
+  },
+  filterSubLabel: {
+    fontSize: 12,
+    color: '#999',
     marginBottom: 8,
   },
   filterOptions: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
   },
   filterChip: {
     paddingHorizontal: 14,
@@ -882,23 +906,39 @@ const styles = StyleSheet.create({
   filterChipTextActive: {
     color: 'white',
   },
+  presetChip: {
+    backgroundColor: '#e8f0fe',
+    borderColor: '#2563eb',
+  },
   priceRangeContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+  },
+  priceInputWrapper: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f9f9f9',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    paddingHorizontal: 8,
+  },
+  priceInputLabel: {
+    fontSize: 14,
+    color: '#666',
+    marginRight: 4,
   },
   priceInput: {
     flex: 1,
-    backgroundColor: '#f9f9f9',
-    borderRadius: 8,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: '#ddd',
+    paddingVertical: 10,
     fontSize: 14,
+    color: '#1a1a1a',
   },
   priceRangeSeparator: {
     fontSize: 14,
     color: '#666',
+    marginHorizontal: 8,
   },
   modalActions: {
     flexDirection: 'row',
@@ -925,6 +965,43 @@ const styles = StyleSheet.create({
     backgroundColor: '#2563eb',
   },
   applyButtonText: {
+    color: 'white',
+    fontWeight: '600',
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  loadingText: {
+    marginTop: 12,
+    color: '#666',
+    fontSize: 16,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#666',
+    marginTop: 12,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#999',
+    marginTop: 4,
+  },
+  resetFiltersButton: {
+    marginTop: 16,
+    backgroundColor: '#2563eb',
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  resetFiltersText: {
     color: 'white',
     fontWeight: '600',
   },

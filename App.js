@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { ActivityIndicator, View, Text } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthProvider, useAuth } from './src/hooks/useAuth';
 
 import LoginScreen from './src/screens/LoginScreen';
@@ -16,9 +17,76 @@ import ProfileScreen from './src/screens/ProfileScreen';
 import DealDetailScreen from './src/screens/DealDetailScreen';
 import TermsScreen from './src/screens/TermsScreen';
 import ChatScreen from './src/screens/ChatScreen';
+import Under200kScreen from './src/screens/Under200kScreen';
+
+// Import the listings data directly
+import listingsData from './src/data/listings.json';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
+
+// Preload data function
+const preloadListingsData = async () => {
+  try {
+    // Check if we already have cached data
+    const cached = await AsyncStorage.getItem('listings_cache');
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (parsed.length > 0) {
+        console.log(`✅ Using cached data: ${parsed.length} listings`);
+        return;
+      }
+    }
+
+    // Format the data from JSON
+    const formatted = listingsData.map(item => ({
+      id: item.propertyId || item.id || Math.random().toString(36).substr(2, 9),
+      title: item.name || item.title || 'Property',
+      price: item.price || 'Contact for price',
+      priceDisplay: item.priceDisplay || item.price || 'Contact for price',
+      address: item.address || '',
+      city: item.city || '',
+      state: item.state || '',
+      propertyType: item.propertyType || 'Commercial',
+      description: item.description || item.summary || '',
+      images: item.images || [],
+      imageUrl: item.imageUrl || item.image || item.photo || '',
+      photo: item.photo || '',
+      broker: item.brokerName || item.broker || '',
+      brokerName: item.brokerName || item.broker || '',
+      brokerCompany: item.brokerCompany || '',
+      brokerPhone: item.brokerPhone || '',
+      brokerEmail: item.brokerEmail || '',
+      url: item.listingUrl || item.url || '',
+      listingUrl: item.listingUrl || item.url || '',
+      source: 'LoopNet',
+      sourceType: item.sourceType || 'listingWeb',
+      propertyFacts: item.propertyFacts || {},
+      cashFlow: item.cashFlow || '',
+      revenue: item.revenue || '',
+      yearBuilt: item.yearBuilt || '',
+      lotSize: item.lotSize || '',
+      squareFeet: item.squareFeet || '',
+      capRate: item.capRate || '',
+      propertyType: item.propertyType || '',
+      propertySubtype: item.propertySubtype || '',
+      buildingClass: item.buildingClass || '',
+      numberOfStories: item.numberOfStories || '',
+      parkingRatio: item.parkingRatio || '',
+      tenancy: item.tenancy || '',
+      saleType: item.saleType || '',
+      zip: item.zip || '',
+      country: item.country || 'US',
+      dateUpdated: item.dateUpdated || '',
+    }));
+
+    // Save to cache
+    await AsyncStorage.setItem('listings_cache', JSON.stringify(formatted));
+    console.log(`✅ Preloaded ${formatted.length} listings from JSON`);
+  } catch (error) {
+    console.error('❌ Preload error:', error);
+  }
+};
 
 function MainTabs() {
   return (
@@ -32,6 +100,7 @@ function MainTabs() {
           else if (route.name === 'Portfolio') iconName = focused ? 'pie-chart' : 'pie-chart-outline';
           else if (route.name === 'Chat') iconName = focused ? 'chatbubble' : 'chatbubble-outline';
           else if (route.name === 'Profile') iconName = focused ? 'person' : 'person-outline';
+          else if (route.name === 'Under200k') iconName = focused ? 'cash' : 'cash-outline';
           return <Icon name={iconName} size={size} color={color} />;
         },
         tabBarActiveTintColor: '#2563eb',
@@ -45,6 +114,7 @@ function MainTabs() {
       <Tab.Screen name="Opportunities" component={OpportunitiesScreen} options={{ title: 'Opportunities' }} />
       <Tab.Screen name="Deals" component={DealsScreen} options={{ title: 'Deals' }} />
       <Tab.Screen name="Portfolio" component={PortfolioScreen} options={{ title: 'Portfolio' }} />
+      <Tab.Screen name="Under200k" component={Under200kScreen} options={{ title: '💰 $200k' }} />
       <Tab.Screen name="Chat" component={ChatScreen} options={{ title: 'Chat' }} />
       <Tab.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profile' }} />
     </Tab.Navigator>
@@ -100,6 +170,11 @@ function AppNavigator() {
 }
 
 export default function App() {
+  // Preload data when app starts
+  useEffect(() => {
+    preloadListingsData();
+  }, []);
+
   return (
     <AuthProvider>
       <NavigationContainer>

@@ -28,12 +28,3 @@ project.xcworkspace
 
 # CocoaPods
 /Pods/
-
-# Xcode
-*.xcodeproj
-*.xcworkspace
-*.xcuserstate
-*.xcuserdata
-Pods/
-DerivedData/
-
