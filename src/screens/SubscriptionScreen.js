@@ -14,7 +14,7 @@ import {
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../hooks/useAuth';
 
-const API_URL = 'https://investbook-production.up.railway.app/api';
+const API_URL = "https://investbook-production.up.railway.app/api";
 
 const SUBSCRIPTION_TIERS = {
   view_only: {
@@ -64,6 +64,7 @@ export default function SubscriptionScreen({ navigation }) {
   const [subscription, setSubscription] = useState(null);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [selectedTier, setSelectedTier] = useState('chat');
+  const [error, setError] = useState(null);
   const [testMode, setTestMode] = useState(false);
 
   useEffect(() => {
@@ -73,12 +74,15 @@ export default function SubscriptionScreen({ navigation }) {
   const loadSubscriptionStatus = async () => {
     try {
       setLoading(true);
+      setError(null);
       
       if (!token) {
+        console.log('⚠️ No token, cannot load subscription');
         setLoading(false);
         return;
       }
 
+      console.log('📡 Loading subscription status...');
       const response = await fetch(`${API_URL}/subscriptions/status`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -87,15 +91,18 @@ export default function SubscriptionScreen({ navigation }) {
       
       if (response.ok) {
         const data = await response.json();
-        setIsSubscribed(data.isSubscribed);
+        console.log('📊 Subscription data:', data);
+        setIsSubscribed(data.isSubscribed || false);
         setSubscription(data);
-        console.log('📊 Subscription status:', data);
       } else {
-        console.log('⚠️ Could not load subscription status');
+        const errorText = await response.text();
+        console.log(`⚠️ Could not load subscription status: ${response.status} ${errorText}`);
+        setError(`Error ${response.status}: Could not load subscription`);
         setIsSubscribed(false);
       }
     } catch (error) {
-      console.error('Error loading subscription:', error);
+      console.error('❌ Error loading subscription:', error);
+      setError('Network error. Please try again.');
       setIsSubscribed(false);
     } finally {
       setLoading(false);
@@ -109,6 +116,8 @@ export default function SubscriptionScreen({ navigation }) {
     }
 
     setSubscribing(true);
+    setError(null);
+    
     try {
       // First, try to create a checkout session
       const response = await fetch(`${API_URL}/create-checkout-session`, {
@@ -186,6 +195,7 @@ export default function SubscriptionScreen({ navigation }) {
       
     } catch (error) {
       console.error('Subscription error:', error);
+      setError(error.message || 'Failed to process subscription');
       Alert.alert('Error', error.message || 'Failed to process subscription');
     } finally {
       setSubscribing(false);
@@ -235,6 +245,19 @@ export default function SubscriptionScreen({ navigation }) {
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#2563eb" />
         <Text style={styles.loadingText}>Loading subscription...</Text>
+      </View>
+    );
+  }
+
+  if (error && !isSubscribed) {
+    return (
+      <View style={styles.errorContainer}>
+        <Icon name="alert-circle-outline" size={60} color="#ef4444" />
+        <Text style={styles.errorTitle}>Oops!</Text>
+        <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={loadSubscriptionStatus}>
+          <Text style={styles.retryButtonText}>Try Again</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -394,6 +417,37 @@ const styles = StyleSheet.create({
     marginTop: 12,
     color: '#666',
     fontSize: 16,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+    padding: 20,
+  },
+  errorTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#1a1a1a',
+    marginTop: 12,
+  },
+  errorText: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 20,
+  },
+  retryButton: {
+    backgroundColor: '#2563eb',
+    paddingHorizontal: 32,
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  retryButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
   },
   header: {
     padding: 20,

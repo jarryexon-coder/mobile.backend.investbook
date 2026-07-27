@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   SafeAreaView,
   Dimensions,
+  Alert,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../hooks/useAuth';
@@ -17,7 +18,7 @@ import { getSafeImageUrl, getPlaceholderImage, isImageBlocked } from '../utils/i
 
 const { width } = Dimensions.get('window');
 
-// SIMPLE DetailRow - Only renders strings
+// DetailRow component
 const DetailRow = ({ label, value }) => {
   if (!label) return null;
   if (value === null || value === undefined) return null;
@@ -43,7 +44,7 @@ const DetailRow = ({ label, value }) => {
   );
 };
 
-// ImageWithFallback component with "Official Images Available" overlay
+// ImageWithFallback component
 const ImageWithFallback = ({ deal, style, resizeMode = 'cover' }) => {
   const [imageError, setImageError] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -108,6 +109,7 @@ export default function DealDetailScreen({ route, navigation }) {
   const { user, token } = useAuth();
   const [loading, setLoading] = useState(!deal);
   const [participantCount, setParticipantCount] = useState(0);
+  const [chatLoading, setChatLoading] = useState(false);
 
   useEffect(() => {
     if (deal) {
@@ -135,7 +137,73 @@ export default function DealDetailScreen({ route, navigation }) {
         setParticipantCount(data.length || 0);
       }
     } catch (error) {
-      // Silent fail - just use 0
+      // Silent fail
+    }
+  };
+
+  const handleDealChat = async () => {
+    const dealId = deal.id || deal.propertyId || deal.listing_id;
+    
+    console.log('💬 Deal Chat button pressed!');
+    console.log('   dealId:', dealId);
+    console.log('   dealTitle:', safeTitle);
+    
+    if (!dealId) {
+      Alert.alert('Error', 'Invalid deal ID');
+      return;
+    }
+
+    setChatLoading(true);
+    
+    try {
+      // First, ensure the deal exists in the database for chat
+      const ensureResponse = await fetch(
+        `https://investbook-production.up.railway.app/api/deals/ensure/${dealId}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            title: deal.title || 'Property',
+            description: deal.description || 'Listing from LoopNet',
+            propertyType: deal.propertyType || 'Commercial',
+            price: deal.price || 0,
+            location: deal.location || deal.address || '',
+          }),
+        }
+      );
+      
+      if (ensureResponse.ok) {
+        const ensureData = await ensureResponse.json();
+        console.log('✅ Deal ensured for chat:', ensureData);
+        
+        // Navigate to DealChat with the deal ID
+        navigation.navigate('DealChat', { 
+          dealId: String(dealId),
+          dealTitle: safeTitle,
+          deal: deal
+        });
+      } else {
+        console.log('⚠️ Failed to ensure deal for chat');
+        // Still try to navigate - the chat screen will handle it
+        navigation.navigate('DealChat', { 
+          dealId: String(dealId),
+          dealTitle: safeTitle,
+          deal: deal
+        });
+      }
+    } catch (error) {
+      console.error('❌ Error ensuring deal:', error);
+      // Still try to navigate
+      navigation.navigate('DealChat', { 
+        dealId: String(dealId),
+        dealTitle: safeTitle,
+        deal: deal
+      });
+    } finally {
+      setChatLoading(false);
     }
   };
 
@@ -299,22 +367,31 @@ export default function DealDetailScreen({ route, navigation }) {
             </TouchableOpacity>
           )}
 
-          {/* Deal Chat Button - ONLY this button */}
-          {dealId && (
+          {/* Deal Chat Button - Now works for ALL listings */}
+          {dealId && token ? (
             <TouchableOpacity
-              style={styles.chatButton}
-              onPress={() => {
-                navigation.navigate('DealChat', { 
-                  dealId: String(dealId),
-                  dealTitle: safeTitle,
-                  deal: deal
-                });
-              }}
+              style={[styles.chatButton, chatLoading && styles.chatButtonDisabled]}
+              onPress={handleDealChat}
+              disabled={chatLoading}
             >
-              <Icon name="people-outline" size={20} color="white" />
-              <Text style={styles.chatButtonText}>
-                Deal Chat {participantCount > 0 ? `(${participantCount})` : ''}
-              </Text>
+              {chatLoading ? (
+                <ActivityIndicator size="small" color="white" />
+              ) : (
+                <>
+                  <Icon name="people-outline" size={20} color="white" />
+                  <Text style={styles.chatButtonText}>
+                    Deal Chat {participantCount > 0 ? `(${participantCount})` : ''}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.chatButton, styles.chatButtonDisabled]}
+              onPress={() => Alert.alert('Login Required', 'Please login to join the chat')}
+            >
+              <Icon name="lock-closed" size={20} color="white" />
+              <Text style={styles.chatButtonText}>Login to Chat</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -589,6 +666,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginTop: 12,
     marginBottom: 20,
+  },
+  chatButtonDisabled: {
+    opacity: 0.6,
   },
   chatButtonText: {
     color: 'white',

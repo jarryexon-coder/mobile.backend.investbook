@@ -18,45 +18,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { fetchAllOpportunities } from '../services/scraperService';
 import { formatPriceSmart } from '../utils/smartPriceFormatter';
 import { withSubscription, ACCESS_TYPES } from '../components/SubscriptionGuard';
-
-// Check if price is disclosed
-const isPriceDisclosed = (item) => {
-  const priceStr = String(item.price || item.priceDisplay || '');
-  const isUndisclosed = 
-    priceStr.includes('Not Disclosed') ||
-    priceStr.includes('Contact') ||
-    priceStr.includes('Request') ||
-    priceStr.includes('N/A') ||
-    priceStr === '' ||
-    priceStr === '0' ||
-    priceStr === 'undefined' ||
-    priceStr === 'null' ||
-    priceStr === 'Price Not Disclosed';
-  
-  return !isUndisclosed && (item.priceNumeric > 0 || item.price > 0);
-};
-
-// Sort function: listings with prices first, then by price
-const sortListingsByPrice = (items) => {
-  return [...items].sort((a, b) => {
-    const hasPriceA = isPriceDisclosed(a);
-    const hasPriceB = isPriceDisclosed(b);
-    
-    // If one has price and the other doesn't, put the one with price first
-    if (hasPriceA && !hasPriceB) return -1;
-    if (!hasPriceA && hasPriceB) return 1;
-    
-    // If both have prices, sort by price (low to high)
-    if (hasPriceA && hasPriceB) {
-      const priceA = a.priceNumeric || a.price || 0;
-      const priceB = b.priceNumeric || b.price || 0;
-      return priceA - priceB;
-    }
-    
-    // If both don't have prices, keep original order
-    return 0;
-  });
-};
+import { isUKListing, isPriceDisclosed } from '../utils/listingUtils';
 
 // Memoized Opportunity Card
 const OpportunityCard = React.memo(({ item, onPress }) => {
@@ -74,6 +36,7 @@ const OpportunityCard = React.memo(({ item, onPress }) => {
     if (item.address) parts.push(item.address);
     if (item.city) parts.push(item.city);
     if (item.state) parts.push(item.state);
+    if (item.country && item.country !== 'US') parts.push(item.country);
     return parts.length > 0 ? parts.join(', ') : 'Location available';
   }, [item]);
 
@@ -81,7 +44,6 @@ const OpportunityCard = React.memo(({ item, onPress }) => {
     return item.category || item.cashFlow || item.revenue || item.ebitda;
   }, [item]);
 
-  // Business details
   const businessDetails = useMemo(() => {
     const details = [];
     if (item.category) details.push(item.category);
@@ -102,7 +64,6 @@ const OpportunityCard = React.memo(({ item, onPress }) => {
     return details.length > 0 ? details.join(' • ') : null;
   }, [item]);
 
-  // Property details
   const propertyDetails = useMemo(() => {
     const details = [];
     if (item.propertyType) details.push(item.propertyType);
@@ -153,7 +114,6 @@ const OpportunityCard = React.memo(({ item, onPress }) => {
         </View>
       )}
       
-      {/* Show badge for undisclosed price */}
       {!hasPrice && (
         <View style={styles.undisclosedBadge}>
           <Icon name="lock-closed" size={12} color="#92400e" />
@@ -185,7 +145,7 @@ const OpportunityCard = React.memo(({ item, onPress }) => {
 
 // Filter Modal Component
 const FilterModal = ({ visible, onClose, filters, onApply }) => {
-  const [selectedSort, setSelectedSort] = useState(filters.sort || 'price_asc');
+  const [selectedSort, setSelectedSort] = useState(filters.sort || 'price_desc');
   const [selectedProperty, setSelectedProperty] = useState(filters.propertyType || 'all');
   const [minPrice, setMinPrice] = useState(filters.minPrice ? String(filters.minPrice) : '');
   const [maxPrice, setMaxPrice] = useState(filters.maxPrice ? String(filters.maxPrice) : '');
@@ -201,8 +161,8 @@ const FilterModal = ({ visible, onClose, filters, onApply }) => {
   ];
 
   const sortOptions = [
-    { label: 'Price: Low to High', value: 'price_asc' },
     { label: 'Price: High to Low', value: 'price_desc' },
+    { label: 'Price: Low to High', value: 'price_asc' },
     { label: 'Newest First', value: 'date_desc' },
   ];
 
@@ -217,7 +177,7 @@ const FilterModal = ({ visible, onClose, filters, onApply }) => {
   };
 
   const handleReset = () => {
-    setSelectedSort('price_asc');
+    setSelectedSort('price_desc');
     setSelectedProperty('all');
     setMinPrice('');
     setMaxPrice('');
@@ -240,7 +200,6 @@ const FilterModal = ({ visible, onClose, filters, onApply }) => {
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false}>
-            {/* Sort Options */}
             <View style={styles.filterSection}>
               <Text style={styles.filterLabel}>Sort By</Text>
               <View style={styles.filterOptions}>
@@ -266,7 +225,6 @@ const FilterModal = ({ visible, onClose, filters, onApply }) => {
               </View>
             </View>
 
-            {/* Property Type */}
             <View style={styles.filterSection}>
               <Text style={styles.filterLabel}>Property Type</Text>
               <View style={styles.filterOptions}>
@@ -292,16 +250,15 @@ const FilterModal = ({ visible, onClose, filters, onApply }) => {
               </View>
             </View>
 
-            {/* Price Range */}
             <View style={styles.filterSection}>
-              <Text style={styles.filterLabel}>Price Range</Text>
-              <Text style={styles.filterSubLabel}>Leave empty for no limit</Text>
+              <Text style={styles.filterLabel}>Price Range (in thousands)</Text>
+              <Text style={styles.filterSubLabel}>Enter 200 = $200,000</Text>
               <View style={styles.priceRangeContainer}>
                 <View style={styles.priceInputWrapper}>
                   <Text style={styles.priceInputLabel}>$</Text>
                   <TextInput
                     style={styles.priceInput}
-                    placeholder="Min"
+                    placeholder="Min (K)"
                     value={minPrice}
                     onChangeText={setMinPrice}
                     keyboardType="numeric"
@@ -313,7 +270,7 @@ const FilterModal = ({ visible, onClose, filters, onApply }) => {
                   <Text style={styles.priceInputLabel}>$</Text>
                   <TextInput
                     style={styles.priceInput}
-                    placeholder="Max"
+                    placeholder="Max (K)"
                     value={maxPrice}
                     onChangeText={setMaxPrice}
                     keyboardType="numeric"
@@ -323,15 +280,16 @@ const FilterModal = ({ visible, onClose, filters, onApply }) => {
               </View>
             </View>
 
-            {/* Quick price presets */}
             <View style={styles.filterSection}>
               <Text style={styles.filterLabel}>Quick Presets</Text>
               <View style={styles.filterOptions}>
                 {[
-                  { label: 'Under $500k', value: 500000 },
-                  { label: 'Under $1M', value: 1000000 },
-                  { label: 'Under $5M', value: 5000000 },
-                  { label: 'Under $10M', value: 10000000 },
+                  { label: 'Under $50k', value: 50 },
+                  { label: 'Under $100k', value: 100 },
+                  { label: 'Under $200k', value: 200 },
+                  { label: 'Under $500k', value: 500 },
+                  { label: 'Under $1M', value: 1000 },
+                  { label: 'Under $5M', value: 5000 },
                 ].map((preset) => (
                   <TouchableOpacity
                     key={preset.value}
@@ -375,7 +333,7 @@ function OpportunitiesScreen({ navigation }) {
   const [activeTab, setActiveTab] = useState('all');
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({
-    sort: 'price_asc',
+    sort: 'price_desc',
     propertyType: 'all',
     minPrice: 0,
     maxPrice: 0,
@@ -412,7 +370,6 @@ function OpportunitiesScreen({ navigation }) {
     loadOpportunities(true);
   }, [loadOpportunities]);
 
-  // Filter, sort, and prioritize items with prices
   const filteredItems = useMemo(() => {
     let items = [];
     if (activeTab === 'all') {
@@ -423,88 +380,49 @@ function OpportunitiesScreen({ navigation }) {
       items = opportunities.realEstate || [];
     }
 
-    // Apply price filter (only for items with prices)
+    // Filter out UK listings
+    items = items.filter(item => !isUKListing(item));
+
+    // Apply price filters
     if (filters.minPrice > 0) {
-      items = items.filter(item => {
-        const price = item.priceNumeric || item.price || 0;
-        return price >= filters.minPrice || price === 0;
-      });
+      const minPrice = filters.minPrice * 1000;
+      items = items.filter(item => (item.priceNumeric || item.price || 0) >= minPrice);
     }
     if (filters.maxPrice > 0) {
-      items = items.filter(item => {
-        const price = item.priceNumeric || item.price || 0;
-        return price <= filters.maxPrice || price === 0;
-      });
+      const maxPrice = filters.maxPrice * 1000;
+      items = items.filter(item => (item.priceNumeric || item.price || 0) <= maxPrice);
     }
 
-    // Apply property type filter
     if (filters.propertyType !== 'all') {
       items = items.filter(item => 
         (item.propertyType || '').toLowerCase().includes(filters.propertyType)
       );
     }
 
-    // Apply sorting - but always prioritize items with prices
-    switch (filters.sort) {
-      case 'price_asc':
-        items.sort((a, b) => {
-          const hasPriceA = isPriceDisclosed(a);
-          const hasPriceB = isPriceDisclosed(b);
-          
-          if (hasPriceA && !hasPriceB) return -1;
-          if (!hasPriceA && hasPriceB) return 1;
-          
-          if (hasPriceA && hasPriceB) {
-            return (a.priceNumeric || a.price || 0) - (b.priceNumeric || b.price || 0);
-          }
-          return 0;
-        });
-        break;
-      case 'price_desc':
-        items.sort((a, b) => {
-          const hasPriceA = isPriceDisclosed(a);
-          const hasPriceB = isPriceDisclosed(b);
-          
-          if (hasPriceA && !hasPriceB) return -1;
-          if (!hasPriceA && hasPriceB) return 1;
-          
-          if (hasPriceA && hasPriceB) {
-            return (b.priceNumeric || b.price || 0) - (a.priceNumeric || a.price || 0);
-          }
-          return 0;
-        });
-        break;
-      case 'date_desc':
-        items.sort((a, b) => {
-          const hasPriceA = isPriceDisclosed(a);
-          const hasPriceB = isPriceDisclosed(b);
-          
-          if (hasPriceA && !hasPriceB) return -1;
-          if (!hasPriceA && hasPriceB) return 1;
-          
-          const dateA = a.dateUpdated || a.created_at || '';
-          const dateB = b.dateUpdated || b.created_at || '';
-          return dateB.localeCompare(dateA);
-        });
-        break;
-      default:
-        // Default: price_asc with price priority
-        items.sort((a, b) => {
-          const hasPriceA = isPriceDisclosed(a);
-          const hasPriceB = isPriceDisclosed(b);
-          
-          if (hasPriceA && !hasPriceB) return -1;
-          if (!hasPriceA && hasPriceB) return 1;
-          
-          if (hasPriceA && hasPriceB) {
-            return (a.priceNumeric || a.price || 0) - (b.priceNumeric || b.price || 0);
-          }
-          return 0;
-        });
-        break;
-    }
-
-    return items;
+    // Sort: Price Not Disclosed at bottom, then by price
+    return items.sort((a, b) => {
+      const hasPriceA = isPriceDisclosed(a);
+      const hasPriceB = isPriceDisclosed(b);
+      
+      // If one has price and the other doesn't, put the one with price first
+      if (hasPriceA && !hasPriceB) return -1;
+      if (!hasPriceA && hasPriceB) return 1;
+      
+      // If both have prices, sort by price
+      if (hasPriceA && hasPriceB) {
+        const priceA = a.priceNumeric || a.price || 0;
+        const priceB = b.priceNumeric || b.price || 0;
+        
+        // Apply sort direction
+        if (filters.sort === 'price_desc') {
+          return priceB - priceA; // High to low
+        } else {
+          return priceA - priceB; // Low to high
+        }
+      }
+      
+      return 0;
+    });
   }, [opportunities, activeTab, filters]);
 
   const renderItem = useCallback(({ item }) => (
@@ -520,26 +438,12 @@ function OpportunitiesScreen({ navigation }) {
 
   const getFilterCount = useMemo(() => {
     let count = 0;
-    if (filters.sort !== 'price_asc') count++;
+    if (filters.sort !== 'price_desc') count++;
     if (filters.propertyType !== 'all') count++;
     if (filters.minPrice > 0) count++;
     if (filters.maxPrice > 0) count++;
     return count;
   }, [filters]);
-
-  // Count items with prices vs without
-  const priceStats = useMemo(() => {
-    let withPrice = 0;
-    let withoutPrice = 0;
-    filteredItems.forEach(item => {
-      if (isPriceDisclosed(item)) {
-        withPrice++;
-      } else {
-        withoutPrice++;
-      }
-    });
-    return { withPrice, withoutPrice };
-  }, [filteredItems]);
 
   if (loading && filteredItems.length === 0) {
     return (
@@ -556,17 +460,14 @@ function OpportunitiesScreen({ navigation }) {
       <View style={styles.container}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Opportunities</Text>
-          <Text style={styles.headerSubtitle}>
-            {filteredItems.length} opportunities • {priceStats.withPrice} with prices
-          </Text>
+          <Text style={styles.headerSubtitle}>{filteredItems.length} US opportunities available</Text>
         </View>
 
-        {/* Search Bar */}
         <View style={styles.searchContainer}>
           <Icon name="search-outline" size={20} color="#999" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search opportunities..."
+            placeholder="Search US opportunities..."
             value={searchQuery}
             onChangeText={setSearchQuery}
             onSubmitEditing={() => loadOpportunities()}
@@ -579,7 +480,6 @@ function OpportunitiesScreen({ navigation }) {
           )}
         </View>
 
-        {/* Filter Bar */}
         <View style={styles.filterBar}>
           <TouchableOpacity
             style={[styles.filterButton, getFilterCount > 0 && styles.filterButtonActive]}
@@ -637,13 +537,13 @@ function OpportunitiesScreen({ navigation }) {
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Icon name="business-outline" size={60} color="#ccc" />
-              <Text style={styles.emptyText}>No opportunities found</Text>
+              <Text style={styles.emptyText}>No US opportunities found</Text>
               <Text style={styles.emptySubtext}>Try adjusting your filters</Text>
               <TouchableOpacity 
                 style={styles.resetFiltersButton}
                 onPress={() => {
                   setFilters({
-                    sort: 'price_asc',
+                    sort: 'price_desc',
                     propertyType: 'all',
                     minPrice: 0,
                     maxPrice: 0,
@@ -1055,5 +955,5 @@ const styles = StyleSheet.create({
   },
 });
 
-// Export with subscription guard - SINGLE default export
+// Export with subscription guard
 export default withSubscription(OpportunitiesScreen, ACCESS_TYPES.VIEW_LISTINGS);

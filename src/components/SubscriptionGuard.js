@@ -44,15 +44,14 @@ export const withSubscription = (WrappedComponent, requiredAccess = ACCESS_TYPES
       }
 
       try {
-        console.log('📡 Calling subscription status endpoint...');
-        const response = await fetch(`${API_URL}/subscriptions/status`, {
+        // Try the main endpoint
+        console.log(`📡 Trying endpoint: ${API_URL}/subscription-status`);
+        const response = await fetch(`${API_URL}/subscription-status`, {
           headers: {
             'Authorization': `Bearer ${token}`,
           },
         });
-
-        console.log('📡 Response status:', response.status);
-
+        
         if (response.ok) {
           const data = await response.json();
           console.log('📊 Subscription data:', data);
@@ -64,8 +63,6 @@ export const withSubscription = (WrappedComponent, requiredAccess = ACCESS_TYPES
             console.log('   Tier detected:', tier);
             if (tier === 'chat' || tier === 'CHAT') {
               level = 'chat';
-            } else if (tier === 'view_only' || tier === 'VIEW_ONLY' || tier === 'view' || tier === 'VIEW') {
-              level = 'view_only';
             } else {
               level = 'view_only';
             }
@@ -73,7 +70,6 @@ export const withSubscription = (WrappedComponent, requiredAccess = ACCESS_TYPES
           setAccessLevel(level);
           console.log('   Access level:', level);
           
-          // Check if user has required access
           if (requiredAccess === ACCESS_TYPES.CHAT) {
             const shouldShowPaywall = level !== 'chat';
             console.log('   Chat required, show paywall:', shouldShowPaywall);
@@ -84,8 +80,7 @@ export const withSubscription = (WrappedComponent, requiredAccess = ACCESS_TYPES
             setShowPaywall(shouldShowPaywall);
           }
         } else {
-          const errorText = await response.text();
-          console.log('❌ Subscription status failed:', response.status, errorText);
+          console.log(`❌ Subscription status failed: ${response.status}`);
           setShowPaywall(true);
         }
       } catch (error) {
@@ -96,12 +91,6 @@ export const withSubscription = (WrappedComponent, requiredAccess = ACCESS_TYPES
         console.log('🔍 Subscription check complete. showPaywall:', showPaywall);
       }
     };
-
-    // For test user, allow access (remove in production)
-    if (user?.username === 'testuser') {
-      console.log('🔓 Test user bypassing subscription check');
-      return <WrappedComponent {...props} />;
-    }
 
     if (checking) {
       console.log('⏳ Showing loading state...');
