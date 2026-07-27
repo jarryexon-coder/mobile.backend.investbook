@@ -22,6 +22,8 @@ const SUBSCRIPTION_TIERS = {
     name: 'View Only',
     price: '$4.99',
     period: '/month',
+    yearlyPrice: '$49.99',
+    yearlyPeriod: '/year',
     description: 'Access to all property listings and deals',
     features: [
       'View all property listings',
@@ -38,6 +40,8 @@ const SUBSCRIPTION_TIERS = {
     name: 'Chat & Network',
     price: '$9.99',
     period: '/month',
+    yearlyPrice: '$99.99',
+    yearlyPeriod: '/year',
     description: 'Everything in View Only + Connect with investors',
     features: [
       'Everything in View Only',
