@@ -1,83 +1,51 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { EXPO_PUBLIC_APIFY_API_TOKEN } from '@env';
+import { isUKListing } from '../utils/listingUtils';
 
 const APIFY_API_TOKEN = EXPO_PUBLIC_APIFY_API_TOKEN;
 
 // Cache configuration
-const CACHE_DURATION = 30 * 60 * 1000;
+const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
 
-// ===== DEBUG PRICE FORMATTING - LOG EVERYTHING =====
-const formatPrice = (price) => {
-  console.log('🔧 formatPrice called with:', price, 'type:', typeof price);
-  
-  if (!price || price === 0) {
-    console.log('   ❌ Price is 0 or null, returning "Price Not Disclosed"');
-    return 'Price Not Disclosed';
-  }
-  
-  if (typeof price === 'string' && price.includes('$')) {
-    console.log('   ✅ Already has $, returning as-is:', price);
-    return price;
-  }
-  
-  let numPrice = typeof price === 'string' ? parseFloat(price.replace(/[, $]/g, '')) : price;
-  console.log('   📊 Parsed number:', numPrice);
-  
-  if (isNaN(numPrice) || numPrice === 0) {
-    console.log('   ❌ Invalid number, returning "Price Not Disclosed"');
-    return 'Price Not Disclosed';
-  }
-  
-  const formatted = `$${Math.round(numPrice).toLocaleString('en-US')}`;
-  console.log('   ✅ Formatted:', formatted);
-  return formatted;
-};
-
+// Parse price from string
 const parsePrice = (priceString) => {
-  console.log('🔧 parsePrice called with:', priceString);
-  
-  if (!priceString) {
-    console.log('   ❌ Empty string, returning 0');
-    return 0;
-  }
-  if (typeof priceString === 'number') {
-    console.log('   ✅ Already a number:', priceString);
-    return priceString;
-  }
+  if (!priceString) return 0;
+  if (typeof priceString === 'number') return priceString;
   
   if (typeof priceString === 'string') {
     let cleaned = priceString.replace(/[$€£,]/g, '').trim();
-    console.log('   🧹 Cleaned:', cleaned);
-    
     if (cleaned.toLowerCase().includes('k')) {
       const num = parseFloat(cleaned.toLowerCase().replace('k', '').trim());
-      const result = isNaN(num) ? 0 : num * 1000;
-      console.log('   📊 K format, result:', result);
-      return result;
+      return isNaN(num) ? 0 : num * 1000;
     }
-    
     if (cleaned.toLowerCase().includes('m')) {
       const num = parseFloat(cleaned.toLowerCase().replace('m', '').trim());
-      const result = isNaN(num) ? 0 : num * 1000000;
-      console.log('   📊 M format, result:', result);
-      return result;
+      return isNaN(num) ? 0 : num * 1000000;
     }
-    
     const num = parseFloat(cleaned);
-    const result = isNaN(num) ? 0 : num;
-    console.log('   📊 Plain number, result:', result);
-    return result;
+    return isNaN(num) ? 0 : num;
   }
-  
-  console.log('   ❌ Unknown type, returning 0');
   return 0;
 };
 
-// Get cached listings
-const getFixedListings = async () => {
+// Format price for display
+export const formatPrice = (price) => {
+  if (!price || price === 0) return 'Price Not Disclosed';
+  if (typeof price === 'string') {
+    const cleaned = price.replace(/[$€£,]/g, '').trim();
+    const num = parseFloat(cleaned);
+    if (!isNaN(num) && num > 0) {
+      return `$${num.toLocaleString()}`;
+    }
+    return price;
+  }
+  return `$${Math.round(price).toLocaleString()}`;
+};
+
+// Find under $200k from cached listings - FILTER OUT UK
+export const findUnder200kFromListings = async () => {
   try {
-    console.log('📂 Getting cached listings...');
     const cached = await AsyncStorage.getItem('listings_cache');
     if (!cached) {
       console.log('⚠️ No cached listings found');
@@ -85,87 +53,55 @@ const getFixedListings = async () => {
     }
     
     const listings = JSON.parse(cached);
-    console.log(`📊 Found ${listings.length} listings in cache`);
-    
-    // Check first listing price
-    if (listings.length > 0) {
-      const first = listings[0];
-      console.log('🔍 First listing price check:', {
-        title: first.title,
-        price: first.price,
-        priceDisplay: first.priceDisplay,
-        priceNumeric: first.priceNumeric,
-      });
-    }
-    
-    return listings;
-  } catch (error) {
-    console.error('❌ Error getting fixed listings:', error);
-    return null;
-  }
-};
-
-// Find under $200k from cached listings
-export const findUnder200kFromListings = async () => {
-  try {
-    console.log('🔍 Starting findUnder200kFromListings...');
-    const listings = await getFixedListings();
-    if (!listings || listings.length === 0) {
-      console.log('⚠️ No listings found');
-      return null;
-    }
-    
     console.log(`📊 Checking ${listings.length} listings for under $200k...`);
     
+    let ukFilteredCount = 0;
     const under200k = listings.filter(item => {
       let price = 0;
       
-      // Try different price fields
-      if (item.priceNumeric) {
-        price = typeof item.priceNumeric === 'number' ? item.priceNumeric : parsePrice(item.priceNumeric);
-        console.log(`   💰 ${item.title}: priceNumeric = ${price}`);
-      } else if (item.price && typeof item.price === 'number') {
+      if (item.price && typeof item.price === 'number') {
         price = item.price;
-        console.log(`   💰 ${item.title}: price (number) = ${price}`);
       } else if (item.price && typeof item.price === 'string') {
         price = parsePrice(item.price);
-        console.log(`   💰 ${item.title}: price (string) = ${price}`);
+      } else if (item.priceNumeric) {
+        price = parsePrice(item.priceNumeric);
       } else if (item.priceDisplay) {
         price = parsePrice(item.priceDisplay);
-        console.log(`   💰 ${item.title}: priceDisplay = ${price}`);
+      } else if (item.formattedPrice) {
+        price = parsePrice(item.formattedPrice);
       }
       
-      // Check propertyFacts
       if (price === 0 && item.propertyFacts) {
         const facts = item.propertyFacts;
-        if (facts.Price) {
-          price = parsePrice(facts.Price);
-          console.log(`   💰 ${item.title}: propertyFacts.Price = ${price}`);
-        } else if (facts.price) {
-          price = parsePrice(facts.price);
-          console.log(`   💰 ${item.title}: propertyFacts.price = ${price}`);
-        }
+        if (facts.Price) price = parsePrice(facts.Price);
+        else if (facts.price) price = parsePrice(facts.price);
+        else if (facts.askingPrice) price = parsePrice(facts.askingPrice);
       }
       
+      // Check if it's under $200k AND NOT a UK listing
       const isUnder = price > 0 && price <= 200000;
-      if (isUnder) {
-        console.log(`   ✅ ${item.title} is under $200k: $${price}`);
+      const isUK = isUKListing(item);
+      
+      if (isUK) {
+        ukFilteredCount++;
+        console.log(`🇬🇧 Filtered out UK: ${item.title || 'Untitled'} (${item.city || '?'}, ${item.state || '?'})`);
       }
-      return isUnder;
+      
+      return isUnder && !isUK;
     });
     
-    console.log(`💰 Found ${under200k.length} listings under $200k`);
+    console.log(`💰 Found ${under200k.length} US listings under $200k (filtered out ${ukFilteredCount} UK listings)`);
     
     // Map to consistent format
     const mappedListings = under200k.map(item => {
       let price = 0;
       
-      if (item.priceNumeric) {
-        price = typeof item.priceNumeric === 'number' ? item.priceNumeric : parsePrice(item.priceNumeric);
-      } else if (item.price && typeof item.price === 'number') {
+      if (item.price && typeof item.price === 'number') {
         price = item.price;
       } else if (item.price && typeof item.price === 'string') {
         price = parsePrice(item.price);
+      } else if (item.priceNumeric) {
+        price = parsePrice(item.priceNumeric);
       } else if (item.priceDisplay) {
         price = parsePrice(item.priceDisplay);
       }
@@ -176,7 +112,7 @@ export const findUnder200kFromListings = async () => {
         else if (facts.price) price = parsePrice(facts.price);
       }
       
-      const result = {
+      return {
         id: item.id || item.propertyId || `prop-${Math.random().toString(36).substr(2, 9)}`,
         title: item.title || item.name || item.address || 'Property for Sale',
         price: price,
@@ -201,19 +137,7 @@ export const findUnder200kFromListings = async () => {
         details: item,
         hasValidId: true,
       };
-      
-      console.log(`   📦 Mapped ${item.title}: priceDisplay = ${result.priceDisplay}`);
-      return result;
     });
-    
-    // Debug: Check first mapped listing
-    if (mappedListings.length > 0) {
-      console.log('🔍 First mapped listing:', {
-        title: mappedListings[0].title,
-        price: mappedListings[0].price,
-        priceDisplay: mappedListings[0].priceDisplay,
-      });
-    }
     
     return mappedListings;
   } catch (error) {
@@ -222,7 +146,7 @@ export const findUnder200kFromListings = async () => {
   }
 };
 
-// Sample businesses
+// Sample businesses (US only)
 const sampleBusinesses = [
   {
     id: 'biz-1',
@@ -245,42 +169,111 @@ const sampleBusinesses = [
     employees: '3',
     yearEstablished: '2018',
   },
-  // ... (other businesses)
+  {
+    id: 'biz-2',
+    title: 'Laundromat - 5 Year Business',
+    price: 120000,
+    priceDisplay: '$120,000',
+    priceNumeric: 120000,
+    category: 'Retail',
+    cashFlow: 52000,
+    revenue: 98000,
+    location: 'Phoenix, AZ',
+    city: 'Phoenix',
+    state: 'AZ',
+    source: 'BizBuySell',
+    description: 'Profitable laundromat with equipment included',
+    broker: 'Sarah Johnson',
+    type: 'business',
+    isUnder200k: true,
+    priceRange: 'under200k',
+    employees: '2',
+    yearEstablished: '2019',
+  },
+  {
+    id: 'biz-3',
+    title: 'Mobile Food Truck Business',
+    price: 65000,
+    priceDisplay: '$65,000',
+    priceNumeric: 65000,
+    category: 'Food & Beverage',
+    cashFlow: 38000,
+    revenue: 85000,
+    location: 'Portland, OR',
+    city: 'Portland',
+    state: 'OR',
+    source: 'BizBuySell',
+    description: 'Fully equipped food truck with established route',
+    broker: 'Mike Davis',
+    type: 'business',
+    isUnder200k: true,
+    priceRange: 'under200k',
+    employees: '2',
+    yearEstablished: '2020',
+  },
+  {
+    id: 'biz-4',
+    title: 'Cleaning Service Franchise',
+    price: 95000,
+    priceDisplay: '$95,000',
+    priceNumeric: 95000,
+    category: 'Services',
+    cashFlow: 42000,
+    revenue: 110000,
+    location: 'Denver, CO',
+    city: 'Denver',
+    state: 'CO',
+    source: 'BizBuySell',
+    description: 'Commercial cleaning business with contracts',
+    broker: 'Lisa Wong',
+    type: 'business',
+    isUnder200k: true,
+    priceRange: 'under200k',
+    employees: '5',
+    yearEstablished: '2017',
+  },
+  {
+    id: 'biz-5',
+    title: 'Small Retail Store',
+    price: 75000,
+    priceDisplay: '$75,000',
+    priceNumeric: 75000,
+    category: 'Retail',
+    cashFlow: 35000,
+    revenue: 95000,
+    location: 'Miami, FL',
+    city: 'Miami',
+    state: 'FL',
+    source: 'BizBuySell',
+    description: 'Boutique retail store in shopping center',
+    broker: 'Carlos Rodriguez',
+    type: 'business',
+    isUnder200k: true,
+    priceRange: 'under200k',
+    employees: '2',
+    yearEstablished: '2019',
+  },
 ];
 
-// Get under 200k listings
+// Get under 200k listings (US only)
 export const getUnder200kListings = async () => {
   console.log('🔄 getUnder200kListings called...');
   
-  // Get from existing listings
+  // Get from existing listings (filtered for US)
   const fromListings = await findUnder200kFromListings();
   
-  console.log('📊 fromListings result:', {
-    count: fromListings?.length || 0,
-    first: fromListings && fromListings.length > 0 ? {
-      title: fromListings[0].title,
-      priceDisplay: fromListings[0].priceDisplay,
-    } : null,
-  });
-  
   if (fromListings && fromListings.length > 0) {
-    console.log(`📦 Found ${fromListings.length} properties under $200k from your listings`);
+    console.log(`📦 Found ${fromListings.length} US properties under $200k`);
     const result = {
       businesses: sampleBusinesses,
       properties: fromListings,
       total: fromListings.length + sampleBusinesses.length,
       timestamp: new Date().toISOString(),
     };
-    console.log('📊 Final result:', {
-      businesses: result.businesses.length,
-      properties: result.properties.length,
-      total: result.total,
-      firstPropertyPrice: result.properties[0]?.priceDisplay,
-    });
     return result;
   }
   
-  console.log('⚠️ Using sample data');
+  console.log('⚠️ Using sample data (US only)');
   return {
     businesses: sampleBusinesses,
     properties: [],

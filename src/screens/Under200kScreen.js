@@ -9,12 +9,14 @@ import {
   RefreshControl,
   SafeAreaView,
   StatusBar,
+  Switch,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useFocusEffect } from '@react-navigation/native';
 import { getUnder200kListings } from '../services/enhancedScraperService';
 import { formatPriceSmart } from '../utils/smartPriceFormatter';
 import { withSubscription, ACCESS_TYPES } from '../components/SubscriptionGuard';
+import { isUKListing, isPriceDisclosed } from '../utils/listingUtils';
 
 // Memoized Listing Card
 const ListingCard = React.memo(({ item, onPress }) => {
@@ -23,14 +25,26 @@ const ListingCard = React.memo(({ item, onPress }) => {
   }, [item]);
 
   const isBusiness = useMemo(() => item.type === 'business', [item]);
+  const hasPrice = isPriceDisclosed(item);
+  const isUK = isUKListing(item);
 
   const location = useMemo(() => {
     const parts = [];
     if (item.address) parts.push(item.address);
     if (item.city) parts.push(item.city);
     if (item.state) parts.push(item.state);
+    if (item.country && item.country !== 'US') parts.push(item.country);
     return parts.length > 0 ? parts.join(', ') : 'Location available';
   }, [item]);
+
+  if (isUK) {
+    console.log('🇬🇧 UK LISTING:', {
+      title: item.title,
+      city: item.city,
+      state: item.state,
+      country: item.country
+    });
+  }
 
   const businessDetails = useMemo(() => {
     const details = [];
@@ -62,7 +76,7 @@ const ListingCard = React.memo(({ item, onPress }) => {
 
   return (
     <TouchableOpacity 
-      style={styles.card} 
+      style={[styles.card, isUK && styles.cardUK]} 
       onPress={() => onPress(item)}
       activeOpacity={0.7}
     >
@@ -82,6 +96,12 @@ const ListingCard = React.memo(({ item, onPress }) => {
       <Text style={styles.cardLocation} numberOfLines={2}>
         📍 {location}
       </Text>
+      
+      {isUK && (
+        <View style={styles.ukBadge}>
+          <Text style={styles.ukBadgeText}>🇬🇧 UK Listing</Text>
+        </View>
+      )}
       
       {isBusiness && businessDetails && (
         <View style={styles.detailsContainer}>
@@ -120,6 +140,8 @@ const ListingCard = React.memo(({ item, onPress }) => {
       </View>
     </TouchableOpacity>
   );
+}, (prevProps, nextProps) => {
+  return prevProps.item?.id === nextProps.item?.id;
 });
 
 function Under200kScreen({ navigation }) {
@@ -128,38 +150,62 @@ function Under200kScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
   const [stats, setStats] = useState({ total: 0, businesses: 0, properties: 0 });
+  const [usOnly, setUsOnly] = useState(true);
 
   const loadListings = useCallback(async (refresh = false) => {
     try {
       if (refresh) setRefreshing(true);
       else setLoading(true);
       
+      console.log('🔄 Loading Under $200k listings...');
       const data = await getUnder200kListings();
       
+      console.log(`📊 Raw: ${data.businesses?.length || 0} businesses, ${data.properties?.length || 0} properties`);
+      
+      // Apply US Only filter if enabled
+      let filteredBusinesses = data.businesses || [];
+      let filteredProperties = data.properties || [];
+      
+      if (usOnly) {
+        filteredBusinesses = filteredBusinesses.filter(item => {
+          const isUK = isUKListing(item);
+          if (isUK) console.log('🇬🇧 Filtering out:', item.title, item.city);
+          return !isUK;
+        });
+        
+        filteredProperties = filteredProperties.filter(item => {
+          const isUK = isUKListing(item);
+          if (isUK) console.log('🇬🇧 Filtering out:', item.title, item.city);
+          return !isUK;
+        });
+        
+        console.log(`📊 After UK filter: ${filteredBusinesses.length} businesses, ${filteredProperties.length} properties`);
+      }
+      
       setListings({
-        businesses: data.businesses || [],
-        properties: data.properties || [],
+        businesses: filteredBusinesses,
+        properties: filteredProperties,
       });
       
       setStats({
-        total: data.total || 0,
-        businesses: data.businesses?.length || 0,
-        properties: data.properties?.length || 0,
+        total: filteredBusinesses.length + filteredProperties.length,
+        businesses: filteredBusinesses.length,
+        properties: filteredProperties.length,
       });
       
-      console.log(`📊 Under $200k: ${data.businesses?.length || 0} businesses, ${data.properties?.length || 0} properties`);
+      console.log(`📊 Under $200k: ${filteredBusinesses.length} businesses, ${filteredProperties.length} properties`);
     } catch (error) {
       console.error('❌ Error loading under $200k listings:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [usOnly]);
 
   useFocusEffect(
     useCallback(() => {
       loadListings();
-    }, [loadListings])
+    }, [loadListings, usOnly])
   );
 
   const handleRefresh = useCallback(() => {
@@ -181,7 +227,13 @@ function Under200kScreen({ navigation }) {
   const renderItem = useCallback(({ item }) => (
     <ListingCard 
       item={item} 
-      onPress={(deal) => navigation.navigate('DealDetail', { deal })} 
+      onPress={(deal) => {
+        navigation.navigate('DealDetail', { deal: {
+          ...deal,
+          priceNumeric: deal.price,
+          priceDisplay: formatPriceSmart(deal),
+        }});
+      }} 
     />
   ), [navigation]);
 
@@ -209,7 +261,21 @@ function Under200kScreen({ navigation }) {
               <Text style={styles.totalBadgeText}>{stats.total} deals</Text>
             </View>
           </View>
-          <Text style={styles.headerSubtitle}>Affordable investment opportunities</Text>
+          <Text style={styles.headerSubtitle}>Affordable US investment opportunities</Text>
+        </View>
+
+        {/* US Only Toggle */}
+        <View style={styles.toggleContainer}>
+          <View style={styles.toggleLeft}>
+            <Icon name="flag-outline" size={20} color="#2563eb" />
+            <Text style={styles.toggleLabel}>🇺🇸 US Only</Text>
+          </View>
+          <Switch
+            value={usOnly}
+            onValueChange={setUsOnly}
+            trackColor={{ false: '#e5e5e5', true: '#2563eb' }}
+            thumbColor={usOnly ? '#fff' : '#fff'}
+          />
         </View>
 
         <View style={styles.statsContainer}>
@@ -266,8 +332,8 @@ function Under200kScreen({ navigation }) {
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Icon name="cash-outline" size={60} color="#ccc" />
-              <Text style={styles.emptyText}>No deals under $200k found</Text>
-              <Text style={styles.emptySubtext}>Pull to refresh or check back later</Text>
+              <Text style={styles.emptyText}>No US deals under $200k found</Text>
+              <Text style={styles.emptySubtext}>Try turning off "US Only" or refresh</Text>
             </View>
           }
         />
@@ -316,6 +382,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     marginTop: 2,
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  toggleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  toggleLabel: {
+    fontSize: 14,
+    color: '#1a1a1a',
+    marginLeft: 8,
+    fontWeight: '500',
   },
   statsContainer: {
     flexDirection: 'row',
@@ -411,6 +497,10 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 2,
   },
+  cardUK: {
+    borderLeftWidth: 3,
+    borderLeftColor: '#ef4444',
+  },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -448,6 +538,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     marginBottom: 6,
+  },
+  ukBadge: {
+    backgroundColor: '#fef3c7',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    alignSelf: 'flex-start',
+    marginBottom: 4,
+  },
+  ukBadgeText: {
+    fontSize: 10,
+    color: '#92400e',
+    fontWeight: '500',
   },
   detailsContainer: {
     backgroundColor: '#f8f9fa',
@@ -526,5 +629,5 @@ const styles = StyleSheet.create({
   },
 });
 
-// Export with subscription guard - Single default export
+// Export with subscription guard
 export default withSubscription(Under200kScreen, ACCESS_TYPES.VIEW_LISTINGS);

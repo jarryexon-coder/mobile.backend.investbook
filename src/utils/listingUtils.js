@@ -11,23 +11,102 @@ export const isUKListing = (item) => {
   const country = (item.country || '').toLowerCase();
   const location = (item.location || '').toLowerCase();
   
-  // UK indicators - only these make it UK
-  const ukIndicators = [
-    'uk', 'gb', 'united kingdom', 'england', 'scotland', 'wales',
-    'northern ireland', 'britain', 'london', 'manchester',
-    'birmingham', 'leeds', 'glasgow', 'edinburgh', 'bristol', 'liverpool',
-    'barking', 'enfield', 'staines', 'ilford', 'woodford green', 'harrow',
-    'ashford', 'twickenham', 'croydon', 'sutton', 'bromley', 'watford',
-    'luton', 'reading', 'slough', 'windsor', 'wembley', 'ealing',
-    'acton', 'richmond', 'kingston', 'wimbledon'
+  // Comprehensive UK locations - ALL London boroughs and surrounding areas
+  const ukLocations = [
+    // London boroughs
+    'barking', 'barnet', 'bexley', 'brent', 'bromley', 'camden', 'croydon', 
+    'ealing', 'enfield', 'greenwich', 'hackney', 'hammersmith', 'haringey', 
+    'harrow', 'havering', 'hillingdon', 'hounslow', 'islington', 'kensington', 
+    'kingston', 'lambeth', 'lewisham', 'merton', 'newham', 'redbridge', 
+    'richmond', 'southwark', 'sutton', 'tower hamlets', 'waltham forest', 
+    'wandsworth', 'westminster',
+    
+    // London areas and neighborhoods
+    'acton', 'balham', 'bayswater', 'belgravia', 'belvedere', 'bethnal green',
+    'brixton', 'camberwell', 'canary wharf', 'chiselhurst', 'chiswick',
+    'clapham', 'dalston', 'east ham', 'edgware', 'eltham', 'finchley',
+    'fulham', 'golders green', 'greenford', 'hackney wick', 'hampton',
+    'hampstead', 'hanwell', 'hayes', 'hendon', 'highbury', 'highgate',
+    'holloway', 'homerton', 'hoxton', 'ilford', 'isle of dogs', 'kew',
+    'kilburn', 'kingston upon thames', 'knightsbridge', 'ladbroke grove',
+    'limehouse', 'maida vale', 'mayfair', 'mitcham', 'northolt', 'northwood',
+    'notting hill', 'paddington', 'park royal', 'perivale', 'pimlico',
+    'poplar', 'putney', 'richmond upon thames', 'romford', 'ruislip',
+    'seven kings', 'shepherd\'s bush', 'southall', 'southgate', 'stepney',
+    'stoke newington', 'stratford', 'surbiton', 'sydenham', 'teddington',
+    'tottenham', 'tufnell park', 'twickenham', 'upminster', 'uxbridge',
+    'victoria', 'walthamstow', 'wandsworth', 'west ham', 'whetstone',
+    'whitechapel', 'willesden', 'wimbledon', 'woodford', 'woodford green',
+    'wood green', 'woolwich',
+    
+    // Surrounding areas (Home Counties)
+    'ashford', 'basingstoke', 'bracknell', 'brentwood', 'camberley',
+    'chelmsford', 'cheshunt', 'dartford', 'egham', 'epsom', 'esher',
+    'evesham', 'farnborough', 'guildford', 'hemel hempstead', 'hertford',
+    'high wycombe', 'hoddesdon', 'leatherhead', 'maidenhead', 'marlow',
+    'oxshott', 'reading', 'redhill', 'reigate', 'ricmansworth', 'slough',
+    'staines', 'sunbury', 'walton', 'watford', 'weybridge', 'windsor',
+    'woking', 'wokingham',
+    
+    // UK Cities
+    'birmingham', 'bradford', 'bristol', 'coventry', 'derby', 'edinburgh',
+    'glasgow', 'leeds', 'leicester', 'liverpool', 'london', 'manchester',
+    'newcastle', 'nottingham', 'plymouth', 'portsmouth', 'sheffield',
+    'southampton', 'stoke', 'sunderland', 'wolverhampton', 'york',
+    
+    // UK Regions/Counties
+    'buckinghamshire', 'cambridgeshire', 'cheshire', 'cornwall', 'cumbria',
+    'derbyshire', 'devon', 'dorset', 'durham', 'essex', 'gloucestershire',
+    'hampshire', 'hertfordshire', 'kent', 'lancashire', 'leicestershire',
+    'lincolnshire', 'norfolk', 'northamptonshire', 'northumberland',
+    'nottinghamshire', 'oxfordshire', 'shropshire', 'somerset', 'staffordshire',
+    'suffolk', 'surrey', 'sussex', 'warwickshire', 'wiltshire',
+    'worcestershire', 'yorkshire'
+  ];
+  
+  // UK country indicators
+  const ukCountryIndicators = [
+    'uk', 'gb', 'great britain', 'united kingdom', 'england', 'scotland',
+    'wales', 'northern ireland', 'britain', 'british'
   ];
   
   const checkFields = [title, address, city, state, location, country];
   
-  // Check for UK indicators - if found, it's UK
-  return ukIndicators.some(indicator => 
+  // Check for UK locations
+  const isUK = ukLocations.some(locationName => 
+    checkFields.some(field => field.includes(locationName))
+  );
+  
+  // Check for UK country indicators
+  const isUKCountry = ukCountryIndicators.some(indicator =>
     checkFields.some(field => field.includes(indicator))
   );
+  
+  // Check for US indicators to override
+  const usIndicators = [
+    'us', 'usa', 'united states',
+    // US States
+    'alabama', 'alaska', 'arizona', 'arkansas', 'california', 'colorado',
+    'connecticut', 'delaware', 'florida', 'georgia', 'hawaii', 'idaho',
+    'illinois', 'indiana', 'iowa', 'kansas', 'kentucky', 'louisiana',
+    'maine', 'maryland', 'massachusetts', 'michigan', 'minnesota',
+    'mississippi', 'missouri', 'montana', 'nebraska', 'nevada',
+    'new hampshire', 'new jersey', 'new mexico', 'new york',
+    'north carolina', 'north dakota', 'ohio', 'oklahoma', 'oregon',
+    'pennsylvania', 'rhode island', 'south carolina', 'south dakota',
+    'tennessee', 'texas', 'utah', 'vermont', 'virginia', 'washington',
+    'west virginia', 'wisconsin', 'wyoming'
+  ];
+  
+  const isUS = usIndicators.some(indicator =>
+    checkFields.some(field => field.includes(indicator))
+  );
+  
+  // If it's clearly US, return false
+  if (isUS) return false;
+  
+  // Return true if UK indicators found
+  return isUK || isUKCountry;
 };
 
 /**
@@ -52,7 +131,7 @@ export const isPriceDisclosed = (item) => {
 };
 
 /**
- * Sort listings: US with prices first, then US without prices, then UK with prices, then UK without prices
+ * Sort listings: US with prices first, then US without prices
  */
 export const sortListingsByPriority = (items) => {
   if (!items || !Array.isArray(items)) return [];
@@ -60,32 +139,12 @@ export const sortListingsByPriority = (items) => {
   return [...items].sort((a, b) => {
     const hasPriceA = isPriceDisclosed(a);
     const hasPriceB = isPriceDisclosed(b);
-    const isUKA = isUKListing(a);
-    const isUKB = isUKListing(b);
     
-    // Priority 1: Non-UK with prices (highest priority)
-    if (!isUKA && hasPriceA && !isUKB && hasPriceB) {
+    if (hasPriceA && hasPriceB) {
       return (a.priceNumeric || a.price || 0) - (b.priceNumeric || b.price || 0);
     }
-    if (!isUKA && hasPriceA) return -1;
-    if (!isUKB && hasPriceB) return 1;
-    
-    // Priority 2: Non-UK without prices
-    if (!isUKA && !hasPriceA && !isUKB && !hasPriceB) return 0;
-    if (!isUKA && !hasPriceA) return -1;
-    if (!isUKB && !hasPriceB) return 1;
-    
-    // Priority 3: UK with prices
-    if (isUKA && hasPriceA && isUKB && hasPriceB) {
-      return (a.priceNumeric || a.price || 0) - (b.priceNumeric || b.price || 0);
-    }
-    if (isUKA && hasPriceA) return -1;
-    if (isUKB && hasPriceB) return 1;
-    
-    // Priority 4: UK without prices (lowest priority)
-    if (isUKA && !hasPriceA && isUKB && !hasPriceB) return 0;
-    if (isUKA && !hasPriceA) return 1;
-    if (isUKB && !hasPriceB) return -1;
+    if (hasPriceA) return -1;
+    if (hasPriceB) return 1;
     
     return 0;
   });

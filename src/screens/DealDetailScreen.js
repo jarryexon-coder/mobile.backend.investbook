@@ -10,11 +10,10 @@ import {
   ActivityIndicator,
   SafeAreaView,
   Dimensions,
-  Alert,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../hooks/useAuth';
-import { getSafeImageUrl, getPlaceholderImage, isImageBlocked } from '../utils/imageUtils';
+import { getSafeImageUrl, getPlaceholderImage, isImageBlocked, initImageUtils } from '../utils/imageUtils';
 
 const { width } = Dimensions.get('window');
 
@@ -44,16 +43,27 @@ const DetailRow = ({ label, value }) => {
   );
 };
 
-// ImageWithFallback component
+// ImageWithFallback component - FIXED: only shows overlay when NO real image
 const ImageWithFallback = ({ deal, style, resizeMode = 'cover' }) => {
   const [imageError, setImageError] = useState(false);
   const [loading, setLoading] = useState(true);
   
+  // Get the image URL
   const imageUrl = getSafeImageUrl(deal);
   const placeholderUrl = getPlaceholderImage(deal);
   
-  const usePlaceholder = !imageUrl || isImageBlocked(imageUrl) || imageError;
+  // Check if we have a REAL image (not a placeholder)
+  const hasRealImage = imageUrl && 
+                       !imageUrl.includes('unsplash.com') && 
+                       !imageUrl.includes('placehold') &&
+                       !imageError;
+  
+  // Only use placeholder if NO real image
+  const usePlaceholder = !hasRealImage;
   const sourceUrl = usePlaceholder ? placeholderUrl : imageUrl;
+
+  // Debug log
+  console.log(`🖼️ Image: ${hasRealImage ? 'REAL' : 'PLACEHOLDER'} - ${sourceUrl?.substring(0, 50)}...`);
 
   return (
     <View style={[styles.imageContainer, style]}>
@@ -75,26 +85,31 @@ const ImageWithFallback = ({ deal, style, resizeMode = 'cover' }) => {
         }}
       />
       
-      <View style={styles.imageOverlay}>
-        <View style={styles.overlayContent}>
-          <View style={styles.iconCircle}>
-            <Icon name="images-outline" size={32} color="white" />
-          </View>
-          <Text style={styles.overlayTitle}>Official Images Available</Text>
-          <Text style={styles.overlaySubtitle}>Contact broker for property photos</Text>
-          <View style={styles.overlayDivider} />
-          <View style={styles.overlayBadge}>
-            <Icon name="shield-checkmark-outline" size={14} color="#60a5fa" />
-            <Text style={styles.overlayBadgeText}>Verified Listing</Text>
+      {/* ONLY show overlay when NO real image */}
+      {usePlaceholder && !loading && (
+        <View style={styles.imageOverlay}>
+          <View style={styles.overlayContent}>
+            <View style={styles.iconCircle}>
+              <Icon name="images-outline" size={32} color="white" />
+            </View>
+            <Text style={styles.overlayTitle}>Official Images Available</Text>
+            <Text style={styles.overlaySubtitle}>Contact broker for property photos</Text>
+            <View style={styles.overlayDivider} />
+            <View style={styles.overlayBadge}>
+              <Icon name="shield-checkmark-outline" size={14} color="#60a5fa" />
+              <Text style={styles.overlayBadgeText}>Verified Listing</Text>
+            </View>
           </View>
         </View>
-      </View>
+      )}
       
+      {/* Always show source badge */}
       <View style={styles.sourceBadge}>
         <Icon name="business-outline" size={12} color="white" />
         <Text style={styles.sourceBadgeText}>{deal?.source || 'Listing'}</Text>
       </View>
       
+      {/* Show property type badge */}
       {deal?.propertyType && (
         <View style={styles.propertyTypeBadge}>
           <Text style={styles.propertyTypeBadgeText}>{deal.propertyType}</Text>
@@ -109,7 +124,11 @@ export default function DealDetailScreen({ route, navigation }) {
   const { user, token } = useAuth();
   const [loading, setLoading] = useState(!deal);
   const [participantCount, setParticipantCount] = useState(0);
-  const [chatLoading, setChatLoading] = useState(false);
+
+  // Load image mapping on mount
+  useEffect(() => {
+    initImageUtils();
+  }, []);
 
   useEffect(() => {
     if (deal) {
@@ -138,72 +157,6 @@ export default function DealDetailScreen({ route, navigation }) {
       }
     } catch (error) {
       // Silent fail
-    }
-  };
-
-  const handleDealChat = async () => {
-    const dealId = deal.id || deal.propertyId || deal.listing_id;
-    
-    console.log('💬 Deal Chat button pressed!');
-    console.log('   dealId:', dealId);
-    console.log('   dealTitle:', safeTitle);
-    
-    if (!dealId) {
-      Alert.alert('Error', 'Invalid deal ID');
-      return;
-    }
-
-    setChatLoading(true);
-    
-    try {
-      // First, ensure the deal exists in the database for chat
-      const ensureResponse = await fetch(
-        `https://investbook-production.up.railway.app/api/deals/ensure/${dealId}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            title: deal.title || 'Property',
-            description: deal.description || 'Listing from LoopNet',
-            propertyType: deal.propertyType || 'Commercial',
-            price: deal.price || 0,
-            location: deal.location || deal.address || '',
-          }),
-        }
-      );
-      
-      if (ensureResponse.ok) {
-        const ensureData = await ensureResponse.json();
-        console.log('✅ Deal ensured for chat:', ensureData);
-        
-        // Navigate to DealChat with the deal ID
-        navigation.navigate('DealChat', { 
-          dealId: String(dealId),
-          dealTitle: safeTitle,
-          deal: deal
-        });
-      } else {
-        console.log('⚠️ Failed to ensure deal for chat');
-        // Still try to navigate - the chat screen will handle it
-        navigation.navigate('DealChat', { 
-          dealId: String(dealId),
-          dealTitle: safeTitle,
-          deal: deal
-        });
-      }
-    } catch (error) {
-      console.error('❌ Error ensuring deal:', error);
-      // Still try to navigate
-      navigation.navigate('DealChat', { 
-        dealId: String(dealId),
-        dealTitle: safeTitle,
-        deal: deal
-      });
-    } finally {
-      setChatLoading(false);
     }
   };
 
@@ -367,23 +320,21 @@ export default function DealDetailScreen({ route, navigation }) {
             </TouchableOpacity>
           )}
 
-          {/* Deal Chat Button - Now works for ALL listings */}
           {dealId && token ? (
             <TouchableOpacity
-              style={[styles.chatButton, chatLoading && styles.chatButtonDisabled]}
-              onPress={handleDealChat}
-              disabled={chatLoading}
+              style={styles.chatButton}
+              onPress={() => {
+                navigation.navigate('DealChat', { 
+                  dealId: String(dealId),
+                  dealTitle: safeTitle,
+                  deal: deal
+                });
+              }}
             >
-              {chatLoading ? (
-                <ActivityIndicator size="small" color="white" />
-              ) : (
-                <>
-                  <Icon name="people-outline" size={20} color="white" />
-                  <Text style={styles.chatButtonText}>
-                    Deal Chat {participantCount > 0 ? `(${participantCount})` : ''}
-                  </Text>
-                </>
-              )}
+              <Icon name="people-outline" size={20} color="white" />
+              <Text style={styles.chatButtonText}>
+                Deal Chat {participantCount > 0 ? `(${participantCount})` : ''}
+              </Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
