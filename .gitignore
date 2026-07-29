@@ -209,3 +209,8 @@ android/local.properties
 InvestBook.ipa
 !*.md
 ios/InvestBook.xcworkspace/
+
+# Environment files (these are now handled by eas.json)
+.env.local
+.env.production
+.env.development

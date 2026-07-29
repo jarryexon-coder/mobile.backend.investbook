@@ -1,8 +1,6 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { EXPO_PUBLIC_API_URL } from '@env';
-
-const API_URL = EXPO_PUBLIC_API_URL;
+import { API_URL } from '../utils/env';
 
 // Sample portfolio data - used as fallback
 const SAMPLE_PORTFOLIO = {

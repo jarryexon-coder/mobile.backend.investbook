@@ -163,3 +163,8 @@ export default {
   getPropertiesByType,
   cacheListings,
 };
+// Replace the @env imports with:
+import { API_URL, APIFY_API_TOKEN, RAPIDAPI_KEY } from '../utils/env';
+
+// Instead of:
+// import { EXPO_PUBLIC_API_URL, EXPO_PUBLIC_APIFY_API_TOKEN, EXPO_PUBLIC_RAPIDAPI_KEY } from '@env';

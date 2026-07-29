@@ -1,15 +1,10 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { EXPO_PUBLIC_APIFY_API_TOKEN, EXPO_PUBLIC_RAPIDAPI_KEY, EXPO_PUBLIC_API_URL } from '@env';
 import { generateMockBusinesses, generateMockRealEstate } from './mockDataGenerator';
+import { API_URL, APIFY_API_TOKEN, RAPIDAPI_KEY } from '../utils/env';
 
 // Import the JSON data directly
 import listingsData from '../data/listings.json';
-
-// Use environment variables
-const APIFY_API_TOKEN = EXPO_PUBLIC_APIFY_API_TOKEN;
-const RAPIDAPI_KEY = EXPO_PUBLIC_RAPIDAPI_KEY;
-const API_URL = EXPO_PUBLIC_API_URL;
 
 console.log('🔑 APIFY Token loaded:', APIFY_API_TOKEN ? '✅ Yes' : '❌ No');
 console.log('🔑 API_URL:', API_URL);
@@ -21,10 +16,10 @@ const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
 const parsePrice = (priceString) => {
     if (!priceString) return 0;
     if (typeof priceString === 'number') return priceString;
-    
+     
     if (typeof priceString === 'string') {
         const cleaned = priceString.replace(/[$€£,]/g, '').trim();
-        
+            
         if (cleaned.toLowerCase().includes('k')) {
             const num = parseFloat(cleaned.toLowerCase().replace('k', ''));
             return isNaN(num) ? 0 : num * 1000;
@@ -34,11 +29,11 @@ const parsePrice = (priceString) => {
             const num = parseFloat(cleaned.toLowerCase().replace('m', ''));
             return isNaN(num) ? 0 : num * 1000000;
         }
-        
+            
         const num = parseFloat(cleaned);
         return isNaN(num) ? 0 : num;
     }
-    
+                
     return 0;
 };
 
@@ -71,7 +66,7 @@ const getCleanSource = (source) => {
     return source;
 };
 
-// 🔥 Format listings from JSON data
+// Format listings from JSON data
 const formatListingsFromJSON = (items) => {
     return items.map(item => {
         // Get the best title
@@ -169,7 +164,7 @@ const formatListingsFromJSON = (items) => {
     });
 };
 
-// 🔥 Load listings from JSON (primary source)
+// Load listings from JSON
 const loadListingsFromJSON = () => {
     try {
         console.log(`📦 Loading ${listingsData.length} listings from JSON`);
@@ -181,7 +176,7 @@ const loadListingsFromJSON = () => {
     }
 };
 
-// 🔥 Get listings from AsyncStorage cache first, then JSON
+// Get listings from AsyncStorage cache first, then JSON
 const getListings = async () => {
     try {
         // Try AsyncStorage first
@@ -208,17 +203,15 @@ const getListings = async () => {
         return [];
     } catch (error) {
         console.error('❌ Error getting listings:', error);
-        // Fallback to JSON
         return loadListingsFromJSON();
     }
 };
 
-// Main scraper function - NOW USES LOCAL JSON
+// Main scraper function
 export const scrapeBizBuySell = async (keyword = '', location = '', state = '', limit = 50) => {
     console.log('🔍 Loading listings from local JSON...');
     
     try {
-        // Get all listings from cache/JSON
         const allListings = await getListings();
         
         if (!allListings || allListings.length === 0) {
@@ -272,7 +265,6 @@ export const scrapeBizBuySell = async (keyword = '', location = '', state = '', 
     }
 };
 
-// 🔥 Main function to fetch all opportunities
 export const fetchAllOpportunities = async (searchParams = {}) => {
     const {
         keyword = '',
@@ -296,7 +288,6 @@ export const fetchAllOpportunities = async (searchParams = {}) => {
     try {
         console.log('📊 Fetching opportunities from local data...');
         
-        // Get all listings
         let allListings = await getListings();
         
         if (!allListings || allListings.length === 0) {
@@ -346,15 +337,13 @@ export const fetchAllOpportunities = async (searchParams = {}) => {
         const realEstate = [];
         
         filtered.forEach(item => {
-            // Check if it's a business listing
-            const isBusiness = 
-                item.category || 
-                item.cashFlow || 
-                item.revenue || 
-                item.ebitda ||
-                item.yearEstablished ||
-                item.employees ||
-                (item.propertyType && ['Office', 'Retail', 'Commercial'].includes(item.propertyType));
+            const isBusiness = item.category || 
+                               item.cashFlow || 
+                               item.revenue || 
+                               item.ebitda ||
+                               item.yearEstablished ||
+                               item.employees ||
+                               (item.propertyType && ['Office', 'Retail', 'Commercial'].includes(item.propertyType));
             
             if (isBusiness) {
                 businesses.push(item);
@@ -379,29 +368,13 @@ export const fetchAllOpportunities = async (searchParams = {}) => {
         
         console.log(`📊 Results: ${results.businesses.length} businesses, ${results.realEstate.length} properties`);
         
-        // Cache results
-        await AsyncStorage.setItem('cachedOpportunities', JSON.stringify(results));
-        await AsyncStorage.setItem('cachedOpportunitiesTime', Date.now().toString());
-        
         return results;
         
     } catch (error) {
         console.error('❌ Error fetching opportunities:', error);
         results.errors.push({ source: 'Main', error: error.message });
         
-        // Try to get cached data
-        try {
-            const cached = await AsyncStorage.getItem('cachedOpportunities');
-            if (cached) {
-                const parsed = JSON.parse(cached);
-                console.log(`📦 Using cached opportunities: ${parsed.businesses?.length || 0} businesses, ${parsed.realEstate?.length || 0} properties`);
-                return parsed;
-            }
-        } catch (cacheError) {
-            console.error('Cache fallback error:', cacheError);
-        }
-        
-        // Final fallback: mock data
+        // Fallback: mock data
         console.log('⚠️ Using mock data as final fallback');
         results.businesses = generateMockBusinesses(location || 'United States', 20);
         results.realEstate = generateMockRealEstate(location || 'United States', 30);
@@ -410,40 +383,9 @@ export const fetchAllOpportunities = async (searchParams = {}) => {
     }
 };
 
-// Get opportunities from cache
-export const getCachedOpportunities = async () => {
-    try {
-        const cached = await AsyncStorage.getItem('cachedOpportunities');
-        const cachedTime = await AsyncStorage.getItem('cachedOpportunitiesTime');
-        
-        if (cached && cachedTime) {
-            const age = Date.now() - parseInt(cachedTime);
-            if (age < CACHE_DURATION) {
-                return JSON.parse(cached);
-            }
-        }
-        return null;
-    } catch (error) {
-        console.error('Cache read error:', error);
-        return null;
-    }
-};
-
-// Cache opportunities
-export const cacheOpportunities = async (data) => {
-    try {
-        await AsyncStorage.setItem('cachedOpportunities', JSON.stringify(data));
-        await AsyncStorage.setItem('cachedOpportunitiesTime', Date.now().toString());
-        console.log('💾 Cached opportunities');
-    } catch (error) {
-        console.error('Cache error:', error);
-    }
-};
-
 export default {
-    fetchAllOpportunities,
     scrapeBizBuySell,
-    getCachedOpportunities,
-    cacheOpportunities,
+    fetchAllOpportunities,
     formatPrice,
+    parsePrice,
 };
