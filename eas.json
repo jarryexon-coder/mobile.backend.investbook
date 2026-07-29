@@ -10,6 +10,7 @@
     },
     "preview": {
       "distribution": "internal",
+      "autoIncrement": false,
       "env": {
         "EXPO_PUBLIC_API_URL": "https://investbook-production.up.railway.app/api",
         "EXPO_PUBLIC_RAPIDAPI_KEY": "$EXPO_PUBLIC_RAPIDAPI_KEY",
@@ -18,7 +19,7 @@
     },
     "production": {
       "distribution": "store",
-      "autoIncrement": true,
+      "autoIncrement": false,
       "env": {
         "EXPO_PUBLIC_API_URL": "https://investbook-production.up.railway.app/api",
         "EXPO_PUBLIC_RAPIDAPI_KEY": "$EXPO_PUBLIC_RAPIDAPI_KEY",

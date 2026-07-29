@@ -17,7 +17,7 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: 'com.jerryjiya.investbook',
-      buildNumber: '1.0.13'  // <- Increment this!
+      buildNumber: '1.0.13'  // <- Set to 13
     },
     android: {
       adaptiveIcon: {
@@ -25,7 +25,7 @@ export default {
         backgroundColor: '#ffffff'
       },
       package: 'com.jerryjiya.investbook',
-      versionCode: 13  // <- Increment this too!
+      versionCode: 13  // <- Set to 13
     },
     web: {
       favicon: './assets/favicon.png'
