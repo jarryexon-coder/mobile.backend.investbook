@@ -7,9 +7,6 @@ export default {
     icon: "./assets/icon.png",
     userInterfaceStyle: "light",
     assetBundlePatterns: ["**/*"],
-    plugins: [
-      "expo-font"
-    ],
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.jerryjiya.investbook",
