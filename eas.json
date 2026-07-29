@@ -6,10 +6,16 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "ios": {
+        "buildNumber": "1.0.13"
+      }
     },
     "preview": {
       "distribution": "internal",
+      "ios": {
+        "buildNumber": "1.0.13"
+      },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://investbook-production.up.railway.app/api",
         "EXPO_PUBLIC_RAPIDAPI_KEY": "$EXPO_PUBLIC_RAPIDAPI_KEY",
@@ -19,6 +25,9 @@
     "production": {
       "distribution": "store",
       "autoIncrement": false,
+      "ios": {
+        "buildNumber": "1.0.13"
+      },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://investbook-production.up.railway.app/api",
         "EXPO_PUBLIC_RAPIDAPI_KEY": "$EXPO_PUBLIC_RAPIDAPI_KEY",
