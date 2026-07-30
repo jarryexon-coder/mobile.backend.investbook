@@ -1,0 +1,533 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  SafeAreaView,
+  StatusBar,
+  Alert,
+} from 'react-native';
+import axios from 'axios';
+import { io } from 'socket.io-client';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { EXPO_PUBLIC_API_URL } from '@env';
+import { useAuth } from '../hooks/useAuth';
+
+const API_URL = EXPO_PUBLIC_API_URL;
+
+export default function ChatScreen({ route, navigation }) {
+  const { dealId, dealTitle, price, location, propertyType } = route.params || {};
+  const { token, user } = useAuth();
+  const [messages, setMessages] = useState([]);
+  const [inputText, setInputText] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [socket, setSocket] = useState(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [syncedDealId, setSyncedDealId] = useState(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const flatListRef = useRef(null);
+  const [reconnecting, setReconnecting] = useState(false);
+
+  const chatDealId = dealId ? String(dealId) : null;
+  const isMockDeal = chatDealId && 
+                     (chatDealId.startsWith('mock-') || 
+                      chatDealId.startsWith('item-') ||
+                      chatDealId.startsWith('prop-'));
+
+  useEffect(() => {
+    if (isMockDeal || !chatDealId) {
+      Alert.alert(
+        'Chat Unavailable',
+        'Chat is only available for real listings.',
+        [{ text: 'Go Back', onPress: () => navigation.goBack() }]
+      );
+      setLoading(false);
+      return;
+    }
+
+    console.log(`💬 Opening chat for deal: ${chatDealId} (${dealTitle || 'Untitled'})`);
+    
+    if (token) {
+      fetchMessages();
+      setupWebSocket();
+    } else {
+      console.log('⚠️ No token available, redirecting to login');
+      Alert.alert(
+        'Login Required',
+        'Please login to access chat.',
+        [{ text: 'Login', onPress: () => navigation.navigate('Login') }]
+      );
+      setLoading(false);
+    }
+
+    return () => {
+      if (socket) {
+        socket.disconnect();
+        console.log('🔌 WebSocket disconnected');
+      }
+    };
+  }, [chatDealId, token]);
+
+  const setupWebSocket = () => {
+    try {
+      const socketUrl = API_URL.replace('/api', '');
+      console.log('🔗 Connecting to WebSocket at:', socketUrl);
+      
+      const newSocket = io(socketUrl, {
+        transports: ['websocket', 'polling'],
+        timeout: 10000,
+        reconnection: true,
+        reconnectionAttempts: 10,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        query: { token },
+        forceNew: true,
+      });
+
+      newSocket.on('connect', () => {
+        console.log('✅ WebSocket connected');
+        setIsConnected(true);
+        setReconnecting(false);
+        newSocket.emit('join_deal_chat', { deal_id: chatDealId });
+      });
+
+      newSocket.on('connect_error', (error) => {
+        console.log('⚠️ WebSocket connection error:', error.message);
+        setIsConnected(false);
+        setReconnecting(true);
+      });
+
+      newSocket.on('disconnect', (reason) => {
+        console.log('❌ WebSocket disconnected:', reason);
+        setIsConnected(false);
+        if (reason === 'io server disconnect') {
+          // Reconnect manually
+          setTimeout(() => {
+            console.log('🔄 Manual reconnection attempt...');
+            newSocket.connect();
+          }, 3000);
+        }
+      });
+
+      newSocket.on('error', (error) => {
+        console.log('⚠️ WebSocket error:', error);
+      });
+
+      newSocket.on('new_message', (data) => {
+        console.log('📩 New message received:', data);
+        const targetId = syncedDealId || chatDealId;
+        if (data.deal_id === targetId) {
+          setMessages(prev => [...prev, data.message]);
+          setTimeout(() => {
+            flatListRef.current?.scrollToEnd({ animated: true });
+          }, 100);
+        }
+      });
+
+      setSocket(newSocket);
+    } catch (error) {
+      console.error('WebSocket setup error:', error);
+      setIsConnected(false);
+    }
+  };
+
+  const fetchMessages = async () => {
+    try {
+      setLoading(true);
+      
+      if (!token) {
+        console.log('⚠️ No token available');
+        setLoading(false);
+        return;
+      }
+
+      let targetId = chatDealId;
+      console.log(`📥 Fetching messages for deal ${targetId}...`);
+      
+      try {
+        const response = await axios.get(`${API_URL}/deals/${targetId}/messages`, {
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        setMessages(response.data || []);
+        console.log(`✅ Fetched ${response.data?.length || 0} messages`);
+      } catch (error) {
+        if (error.response?.status === 404) {
+          console.log('🔄 Deal not found, syncing...');
+          const newId = await syncDealWithBackend();
+          if (newId) {
+            const response = await axios.get(`${API_URL}/deals/${newId}/messages`, {
+              headers: { 
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              }
+            });
+            setMessages(response.data || []);
+            console.log(`✅ Fetched ${response.data?.length || 0} messages from synced deal`);
+          }
+        } else {
+          console.log('⚠️ Error fetching messages:', error.message);
+          setMessages([]);
+        }
+      }
+    } catch (error) {
+      console.log('⚠️ Error fetching messages:', error.message);
+      setMessages([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const syncDealWithBackend = async () => {
+    try {
+      if (!token) {
+        console.log('❌ No token available for sync');
+        return false;
+      }
+      
+      if (isSyncing) {
+        console.log('⏳ Already syncing, please wait...');
+        return false;
+      }
+      
+      setIsSyncing(true);
+      console.log('🔄 Syncing deal with backend...');
+      console.log(`🔑 Token length: ${token?.length || 0}`);
+      
+      const response = await axios.post(
+        `${API_URL}/deals/sync`,
+        {
+          dealId: chatDealId,
+          dealData: {
+            title: dealTitle || 'Property Listing',
+            price: price || 0,
+            location: location || '',
+            propertyType: propertyType || 'Commercial'
+          }
+        },
+        { 
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          } 
+        }
+      );
+      
+      setIsSyncing(false);
+      
+      if (response.data.success) {
+        const newDealId = response.data.deal.id;
+        console.log(`✅ Deal synced successfully with ID: ${newDealId}`);
+        setSyncedDealId(newDealId);
+        return newDealId;
+      }
+      return false;
+    } catch (error) {
+      setIsSyncing(false);
+      console.log('❌ Failed to sync deal:', error.message);
+      if (error.response?.status === 401) {
+        Alert.alert('Session Expired', 'Please login again.', [
+          { text: 'Login', onPress: () => navigation.navigate('Login') }
+        ]);
+      }
+      return false;
+    }
+  };
+
+  const sendMessage = async () => {
+    if (!inputText.trim()) return;
+    
+    if (!isConnected) {
+      console.log('⚠️ Not connected, attempting to reconnect...');
+      if (socket) {
+        socket.connect();
+        // Wait a moment for reconnection
+        setTimeout(async () => {
+          if (isConnected) {
+            await sendMessage();
+          } else {
+            Alert.alert('Connection Error', 'Unable to connect to chat server. Please try again.');
+          }
+        }, 2000);
+      }
+      return;
+    }
+
+    try {
+      if (!token) {
+        Alert.alert('Login Required', 'Please login to send messages.');
+        return;
+      }
+
+      const messageDealId = syncedDealId || chatDealId;
+      console.log(`📤 Sending message to deal ID: ${messageDealId}`);
+
+      const message = inputText.trim();
+      const response = await axios.post(
+        `${API_URL}/deals/${messageDealId}/messages`,
+        { message },
+        { 
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          } 
+        }
+      );
+
+      if (response.data) {
+        setMessages(prev => [...prev, response.data]);
+        setInputText('');
+        setTimeout(() => {
+          flatListRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+        console.log('✅ Message sent successfully');
+      }
+    } catch (error) {
+      console.log(`⚠️ Error sending message (to ID: ${syncedDealId || chatDealId}):`, error.message);
+      
+      if (error.response?.status === 404 && !syncedDealId && !isSyncing) {
+        console.log('🔄 Deal not found, syncing...');
+        const newId = await syncDealWithBackend();
+        if (newId) {
+          console.log(`✅ Synced with ID: ${newId}, retrying...`);
+          setSyncedDealId(newId);
+          setTimeout(() => {
+            sendMessage();
+          }, 300);
+        }
+      } else if (error.response?.status === 404 && syncedDealId) {
+        Alert.alert('Error', 'Deal not found. Please try again later.');
+      } else if (error.response?.status === 401) {
+        Alert.alert('Session Expired', 'Please login again.', [
+          { text: 'Login', onPress: () => navigation.navigate('Login') }
+        ]);
+      } else {
+        Alert.alert('Error', 'Failed to send message. Please try again.');
+      }
+    }
+  };
+
+  const renderMessage = ({ item }) => {
+    const isOwnMessage = item.user_id === user?.id;
+    return (
+      <View style={[styles.messageContainer, isOwnMessage ? styles.ownMessage : styles.otherMessage]}>
+        {!isOwnMessage && (
+          <Text style={styles.messageUsername}>{item.username || 'User'}</Text>
+        )}
+        <Text style={[styles.messageText, isOwnMessage && styles.ownMessageText]}>
+          {item.message}
+        </Text>
+        <Text style={[styles.messageTime, isOwnMessage && styles.ownMessageTime]}>
+          {item.created_at ? new Date(item.created_at).toLocaleTimeString() : ''}
+        </Text>
+      </View>
+    );
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.centerContainer}>
+        <Text style={styles.loadingText}>Loading messages...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" />
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>
+            {dealTitle || 'Chat'}
+            {!isConnected && ' 🔴'}
+            {isConnected && ' 🟢'}
+          </Text>
+          <Text style={styles.headerSubtitle}>
+            {messages.length} {messages.length === 1 ? 'message' : 'messages'}
+            {syncedDealId && ` (ID: ${syncedDealId})`}
+          </Text>
+        </View>
+
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          renderItem={renderMessage}
+          keyExtractor={(item, index) => item.id || `msg-${index}`}
+          contentContainerStyle={styles.messagesList}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyEmoji}>💬</Text>
+              <Text style={styles.emptyText}>No messages yet</Text>
+              <Text style={styles.emptySubtext}>Start the conversation!</Text>
+            </View>
+          }
+          onContentSizeChange={() => {
+            flatListRef.current?.scrollToEnd({ animated: true });
+          }}
+        />
+
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+        >
+          <View style={styles.inputContainer}>
+            <TextInput
+              style={styles.input}
+              placeholder="Type a message..."
+              value={inputText}
+              onChangeText={setInputText}
+              multiline
+            />
+            <TouchableOpacity
+              style={[styles.sendButton, !inputText.trim() && styles.sendButtonDisabled]}
+              onPress={sendMessage}
+              disabled={!inputText.trim()}
+            >
+              <Text style={styles.sendButtonText}>📤</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  container: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: '#666',
+    fontSize: 16,
+  },
+  header: {
+    backgroundColor: 'white',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1a1a1a',
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 2,
+  },
+  messagesList: {
+    padding: 16,
+    flexGrow: 1,
+  },
+  messageContainer: {
+    maxWidth: '80%',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  ownMessage: {
+    backgroundColor: '#2563eb',
+    alignSelf: 'flex-end',
+  },
+  otherMessage: {
+    backgroundColor: 'white',
+    alignSelf: 'flex-start',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  messageUsername: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#666',
+    marginBottom: 2,
+  },
+  messageText: {
+    fontSize: 15,
+    color: '#1a1a1a',
+  },
+  ownMessageText: {
+    color: 'white',
+  },
+  messageTime: {
+    fontSize: 10,
+    color: '#999',
+    marginTop: 4,
+    alignSelf: 'flex-end',
+  },
+  ownMessageTime: {
+    color: 'rgba(255,255,255,0.7)',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 60,
+  },
+  emptyEmoji: {
+    fontSize: 50,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#666',
+    marginTop: 8,
+  },
+  emptySubtext: {
+    fontSize: 13,
+    color: '#999',
+    marginTop: 4,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    padding: 12,
+    backgroundColor: 'white',
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+    alignItems: 'flex-end',
+  },
+  input: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    maxHeight: 100,
+    fontSize: 15,
+  },
+  sendButton: {
+    marginLeft: 8,
+    backgroundColor: '#2563eb',
+    borderRadius: 25,
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sendButtonDisabled: {
+    backgroundColor: '#ccc',
+  },
+  sendButtonText: {
+    fontSize: 20,
+    color: 'white',
+  },
+});
