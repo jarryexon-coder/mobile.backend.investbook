@@ -48,12 +48,6 @@ export default function LoginScreen({ navigation }) {
     }
   };
 
-  // Quick test account for development
-  const fillTestAccount = () => {
-    setEmail('test@test.com');
-    setPassword('password123');
-  };
-
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
@@ -122,14 +116,6 @@ export default function LoginScreen({ navigation }) {
               ) : (
                 <Text style={styles.loginButtonText}>Sign In</Text>
               )}
-            </TouchableOpacity>
-
-            {/* Quick test account button - remove in production */}
-            <TouchableOpacity
-              style={styles.testAccountButton}
-              onPress={fillTestAccount}
-            >
-              <Text style={styles.testAccountText}>Use Test Account</Text>
             </TouchableOpacity>
 
             <View style={styles.registerContainer}>
@@ -231,16 +217,6 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 18,
     fontWeight: '600',
-  },
-  testAccountButton: {
-    marginTop: 12,
-    padding: 8,
-    alignItems: 'center',
-  },
-  testAccountText: {
-    color: '#666',
-    fontSize: 14,
-    textDecorationLine: 'underline',
   },
   registerContainer: {
     flexDirection: 'row',
