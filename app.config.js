@@ -10,8 +10,7 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.jerryjiya.investbook",
-      buildNumber: "1.0.13",
-      deploymentTarget: "15.0"
+      buildNumber: "1.0.13"
     },
     android: {
       adaptiveIcon: {
