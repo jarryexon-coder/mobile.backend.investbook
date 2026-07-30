@@ -2,7 +2,7 @@
   "expo": {
     "name": "InvestBook",
     "slug": "investbook",
-    "version": "1.0.13",
+    "version": "1.0.14",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -10,8 +10,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.jerryjiya.investbook",
-      "buildNumber": "1.0.13",
-      "deploymentTarget": "15.0"
+      "buildNumber": "1.0.14"
     },
     "android": {
       "adaptiveIcon": {
@@ -19,7 +18,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.jerryjiya.investbook",
-      "versionCode": 13
+      "versionCode": 14
     },
     "web": {
       "favicon": "./assets/favicon.png"
