@@ -2,7 +2,7 @@ export default {
   expo: {
     name: "InvestBook",
     slug: "investbook",
-    version: "1.0.13",
+    version: "1.0.14",
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "light",
@@ -10,7 +10,7 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.jerryjiya.investbook",
-      buildNumber: "1.0.13"
+      buildNumber: "1.0.14"
     },
     android: {
       adaptiveIcon: {
