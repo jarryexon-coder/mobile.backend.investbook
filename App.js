@@ -21,6 +21,7 @@ import ChatScreen from './src/screens/ChatScreen';
 import Under200kScreen from './src/screens/Under200kScreen';
 import SubscriptionScreen from './src/screens/SubscriptionScreen';
 import DealChatScreen from './src/screens/DealChatScreen';
+import PrivacyScreen from './src/screens/PrivacyScreen';
 
 // Import the listings data directly
 import listingsData from './src/data/listings.json';
@@ -206,6 +207,11 @@ function AppNavigator() {
               headerTintColor: '#fff',
               title: 'Subscription'
             }}
+          />
+          <Stack.Screen
+            name="Privacy"
+            component={PrivacyScreen}
+            options={{ headerShown: true, title: 'Privacy & Data' }}
           />
         </>
       )}

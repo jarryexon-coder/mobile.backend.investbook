@@ -5,7 +5,7 @@ import { useAuth } from '../hooks/useAuth';
 import { subscriptionService } from '../services/subscriptionService';
 
 export default function ProfileScreen({ navigation }) {
-  const { user, logout } = useAuth();
+  const { user, token, logout } = useAuth();
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [subscription, setSubscription] = useState(null);
 
@@ -35,6 +35,32 @@ export default function ProfileScreen({ navigation }) {
           style: 'destructive',
           onPress: async () => {
             await logout();
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete account permanently?',
+      'This permanently removes your profile, messages, saved data, and access. Active subscriptions must be canceled separately in your Apple Account subscriptions.',
+      [
+        { text: 'Keep Account', style: 'cancel' },
+        {
+          text: 'Delete Account', style: 'destructive',
+          onPress: async () => {
+            try {
+              const response = await fetch('https://investbook-production.up.railway.app/api/account', {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              if (!response.ok) throw new Error('Deletion failed');
+              await logout();
+              Alert.alert('Account deleted', 'Your account and associated personal data have been deleted.');
+            } catch {
+              Alert.alert('Unable to delete account', 'Please try again or contact support@investbook.com.');
+            }
           },
         },
       ]
@@ -86,6 +112,12 @@ export default function ProfileScreen({ navigation }) {
             <Icon name="chevron-forward" size={20} color="#999" style={styles.menuArrow} />
           </TouchableOpacity>
 
+          <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('Privacy')}>
+            <Icon name="shield-checkmark-outline" size={24} color="#1a1a1a" />
+            <Text style={styles.menuText}>Privacy & Data</Text>
+            <Icon name="chevron-forward" size={20} color="#999" style={styles.menuArrow} />
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.menuItem}>
             <Icon name="notifications-outline" size={24} color="#1a1a1a" />
             <Text style={styles.menuText}>Notifications</Text>
@@ -99,6 +131,11 @@ export default function ProfileScreen({ navigation }) {
             <Icon name="log-out-outline" size={24} color="#ef4444" />
             <Text style={[styles.menuText, styles.logoutText]}>Logout</Text>
             <Icon name="chevron-forward" size={20} color="#999" style={styles.menuArrow} />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={[styles.menuItem, styles.deleteItem]} onPress={handleDeleteAccount}>
+            <Icon name="trash-outline" size={24} color="#b91c1c" />
+            <Text style={[styles.menuText, styles.deleteText]}>Delete Account</Text>
           </TouchableOpacity>
         </View>
 
@@ -193,6 +230,12 @@ const styles = StyleSheet.create({
   },
   logoutText: {
     color: '#ef4444',
+  },
+  deleteItem: {
+    borderBottomWidth: 0,
+  },
+  deleteText: {
+    color: '#b91c1c',
   },
   footer: {
     flex: 1,

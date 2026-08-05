@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../hooks/useAuth';
+import { purchaseIosSubscription } from '../services/iosPurchaseService';
 
 const API_URL = "https://investbook-production.up.railway.app/api";
 
@@ -119,79 +120,10 @@ export default function SubscriptionScreen({ navigation }) {
     setError(null);
     
     try {
-      // First, try to create a checkout session
-      const response = await fetch(`${API_URL}/create-checkout-session`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ planId: tierId }),
-      });
-
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to create checkout session');
-      }
-
-      // Check if we're in test mode
-      if (data.test_mode) {
-        // Test mode - activate without payment
-        Alert.alert(
-          'Test Mode',
-          'Payment is not configured. Subscription will be activated for testing.',
-          [
-            {
-              text: 'Activate Test Subscription',
-              onPress: async () => {
-                try {
-                  const activateResponse = await fetch(`${API_URL}/test-activate`, {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      'Authorization': `Bearer ${token}`,
-                    },
-                    body: JSON.stringify({ planId: tierId }),
-                  });
-
-                  if (activateResponse.ok) {
-                    Alert.alert('Success', 'Test subscription activated!');
-                    await loadSubscriptionStatus();
-                    navigation.goBack();
-                  } else {
-                    Alert.alert('Error', 'Failed to activate test subscription');
-                  }
-                } catch (error) {
-                  Alert.alert('Error', 'Failed to activate test subscription');
-                }
-              },
-            },
-            { text: 'Cancel', style: 'cancel' },
-          ]
-        );
-        return;
-      }
-
-      // Real payment flow - open Stripe Checkout
-      if (data.url) {
-        Alert.alert(
-          'Proceed to Payment',
-          `You will be redirected to Stripe to complete your subscription payment.`,
-          [
-            {
-              text: 'Continue to Payment',
-              onPress: () => {
-                // Open Stripe Checkout URL
-                Linking.openURL(data.url);
-              },
-            },
-            { text: 'Cancel', style: 'cancel' },
-          ]
-        );
-      } else {
-        Alert.alert('Error', 'Could not create checkout session');
-      }
+      await purchaseIosSubscription({ planId: tierId, token });
+      await loadSubscriptionStatus();
+      Alert.alert('Subscription active', 'Your Apple subscription is now active.');
+      navigation.goBack();
       
     } catch (error) {
       console.error('Subscription error:', error);
@@ -204,35 +136,13 @@ export default function SubscriptionScreen({ navigation }) {
 
   const handleCancelSubscription = async () => {
     Alert.alert(
-      'Cancel Subscription',
-      'Are you sure you want to cancel? You will lose access to premium features.',
+      'Manage Apple Subscription',
+      'Apple manages cancellation and billing for App Store subscriptions.',
       [
-        { text: 'Keep Subscription', style: 'cancel' },
+        { text: 'Not Now', style: 'cancel' },
         {
-          text: 'Cancel',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const response = await fetch(`${API_URL}/subscriptions/cancel`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${token}`,
-                },
-              });
-              
-              if (response.ok) {
-                setIsSubscribed(false);
-                Alert.alert('Canceled', 'Your subscription has been canceled.');
-                await loadSubscriptionStatus();
-              } else {
-                const errorData = await response.json();
-                Alert.alert('Error', errorData.message || 'Failed to cancel subscription');
-              }
-            } catch (error) {
-              Alert.alert('Error', 'Failed to cancel subscription');
-            }
-          },
+          text: 'Manage Subscription',
+          onPress: () => Linking.openURL('https://apps.apple.com/account/subscriptions'),
         },
       ]
     );

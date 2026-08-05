@@ -22,7 +22,7 @@ import { withSubscription, ACCESS_TYPES } from '../components/SubscriptionGuard'
 const API_URL = EXPO_PUBLIC_API_URL || 'https://investbook-production.up.railway.app/api';
 
 // Chat Message Component
-const ChatMessage = ({ message, isOwn, isSystem }) => {
+const ChatMessage = ({ message, isOwn, isSystem, onReport, onBlock }) => {
   const time = new Date(message.created_at).toLocaleTimeString([], {
     hour: '2-digit',
     minute: '2-digit',
@@ -49,6 +49,16 @@ const ChatMessage = ({ message, isOwn, isSystem }) => {
           {time}
         </Text>
       </View>
+      {!isOwn && (
+        <View style={styles.messageActions}>
+          <TouchableOpacity onPress={() => onReport(message)} accessibilityLabel="Report message">
+            <Text style={styles.actionLink}>Report</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => onBlock(message)} accessibilityLabel="Block user">
+            <Text style={styles.actionLink}>Block</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 };
@@ -359,8 +369,51 @@ function DealChatScreen({ route, navigation }) {
         message={item} 
         isOwn={isOwn}
         isSystem={isSystem}
+        onReport={handleReportMessage}
+        onBlock={handleBlockUser}
       />
     );
+  };
+
+  const handleReportMessage = (message) => {
+    Alert.alert('Report message', 'Why are you reporting this message?', [
+      ...['Spam', 'Harassment', 'Fraud', 'Inappropriate'].map((label) => ({
+        text: label,
+        onPress: async () => {
+          try {
+            const response = await fetch(`${API_URL}/content-reports`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ message_id: message.id, reason: label.toLowerCase() }),
+            });
+            if (!response.ok) throw new Error();
+            Alert.alert('Report sent', 'Thank you. Our team will review this message.');
+          } catch {
+            Alert.alert('Unable to send report', 'Please try again.');
+          }
+        },
+      })),
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
+  const handleBlockUser = (message) => {
+    Alert.alert('Block user?', `You will no longer see messages from ${message.username}.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Block', style: 'destructive', onPress: async () => {
+          try {
+            const response = await fetch(`${API_URL}/users/${message.user_id}/block`, {
+              method: 'POST', headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!response.ok) throw new Error();
+            setMessages((current) => current.filter((item) => item.user_id !== message.user_id));
+          } catch {
+            Alert.alert('Unable to block user', 'Please try again.');
+          }
+        },
+      },
+    ]);
   };
 
   const renderTypingIndicator = () => {
@@ -597,6 +650,17 @@ const styles = StyleSheet.create({
   },
   otherTime: {
     color: '#999',
+  },
+  messageActions: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 4,
+    paddingTop: 4,
+  },
+  actionLink: {
+    color: '#2563eb',
+    fontSize: 12,
+    fontWeight: '600',
   },
   systemMessageContainer: {
     alignSelf: 'center',
