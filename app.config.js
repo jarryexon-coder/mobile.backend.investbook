@@ -5,7 +5,12 @@ export default {
     version: "1.0.14",
     orientation: "portrait",
     icon: "./assets/icon.png",
-    plugins: ['expo-font', 'expo-asset'],
+plugins: [
+  'expo-font',
+  'expo-asset',
+  'expo-splash-screen',
+  'expo-status-bar',
+],
     userInterfaceStyle: "light",
     assetBundlePatterns: ["**/*"],
     ios: {
