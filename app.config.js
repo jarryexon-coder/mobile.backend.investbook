@@ -16,7 +16,7 @@ plugins: [
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.jerryjiya.investbook",
-      buildNumber: "1.0.14"
+      buildNumber: "15"
     },
     android: {
       adaptiveIcon: {

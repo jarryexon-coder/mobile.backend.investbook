@@ -35,8 +35,10 @@
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",
+    "@expo/cli": "^56.1.22",
     "@react-native-community/cli": "^15.0.0",
     "@react-native-community/cli-platform-android": "^15.0.0",
-    "@react-native-community/cli-platform-ios": "^15.0.0"
+    "@react-native-community/cli-platform-ios": "^15.0.0",
+    "@react-native/metro-config": "^0.85.3"
   }
 }

@@ -1,8 +1,9 @@
 require File.join(File.dirname(`node --print "require.resolve('expo/package.json')"`), "scripts/autolinking")
 require File.join(File.dirname(`node --print "require.resolve('react-native/package.json')"`), "scripts/react_native_pods")
 
+prepare_react_native_project!
+
 platform :ios, '16.4'
-use_modular_headers!
 
 target 'InvestBook' do
   use_expo_modules!
@@ -11,11 +12,38 @@ target 'InvestBook' do
   use_react_native!(
     :path => config[:reactNativePath],
     :hermes_enabled => true,
-    :fabric_enabled => false
+    :app_path => "#{Pod::Config.instance.installation_root}/.."
   )
 
   post_install do |installer|
-    react_native_post_install(installer)
+    react_native_post_install(
+      installer,
+      config[:reactNativePath],
+      :mac_catalyst_enabled => false
+    )
+
+    # RN 0.85's CocoaPods codegen project omits the C++ implementation files
+    # for react-native-screens. Keep them in the ReactCodegen target so the
+    # generated RNScreen props and event emitters are linked into the app.
+    react_codegen_target = installer.pods_project.targets.find { |target| target.name == 'ReactCodegen' }
+    rnscreens_codegen_dir = File.join(__dir__, 'build', 'generated', 'ios', 'ReactCodegen', 'react', 'renderer', 'components', 'rnscreens')
+    rnscreens_codegen_files = %w[
+      ComponentDescriptors.cpp
+      EventEmitters.cpp
+      Props.cpp
+      ShadowNodes.cpp
+      States.cpp
+    ]
+
+    if react_codegen_target
+      rnscreens_codegen_files.each do |filename|
+        path = File.join(rnscreens_codegen_dir, filename)
+        next unless File.exist?(path)
+
+        file_ref = installer.pods_project.new_file(path)
+        react_codegen_target.source_build_phase.add_file_reference(file_ref, true)
+      end
+    end
     
     installer.pods_project.targets.each do |target|
       # Fix deployment target for all pods
