@@ -1,4 +1,4 @@
-const API_BASE_URL = 'https://investbook-production.up.railway.app';
+const API_BASE_URL = 'https://api.invest-book.com';
 
 // Cache for image mapping
 let imageMappingCache = null;

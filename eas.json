@@ -23,7 +23,7 @@
         "image": "latest"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://investbook-production.up.railway.app/api",
+        "EXPO_PUBLIC_API_URL": "https://api.invest-book.com/api",
         "EXPO_PUBLIC_RAPIDAPI_KEY": "$EXPO_PUBLIC_RAPIDAPI_KEY",
         "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY": "$EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY"
       }

@@ -15,7 +15,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../hooks/useAuth';
 import { purchaseIosSubscription } from '../services/iosPurchaseService';
 
-const API_URL = "https://investbook-production.up.railway.app/api";
+const API_URL = 'https://api.invest-book.com/api';
 
 const SUBSCRIPTION_TIERS = {
   view_only: {
@@ -84,7 +84,7 @@ export default function SubscriptionScreen({ navigation }) {
       }
 
       console.log('📡 Loading subscription status...');
-      const response = await fetch(`${API_URL}/subscriptions/status`, {
+      const response = await fetch(`${API_URL}/subscription-status`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },

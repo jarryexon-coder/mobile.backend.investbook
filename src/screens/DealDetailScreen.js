@@ -14,6 +14,7 @@ import {
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../hooks/useAuth';
 import { getSafeImageUrl, getPlaceholderImage, isImageBlocked, initImageUtils } from '../utils/imageUtils';
+import { withSubscription, ACCESS_TYPES } from '../components/SubscriptionGuard';
 
 const { width } = Dimensions.get('window');
 
@@ -119,7 +120,7 @@ const ImageWithFallback = ({ deal, style, resizeMode = 'cover' }) => {
   );
 };
 
-export default function DealDetailScreen({ route, navigation }) {
+function DealDetailScreen({ route, navigation }) {
   const { deal } = route.params || {};
   const { user, token } = useAuth();
   const [loading, setLoading] = useState(!deal);
@@ -143,7 +144,7 @@ export default function DealDetailScreen({ route, navigation }) {
     try {
       const dealId = deal.id || deal.propertyId || deal.listing_id;
       const response = await fetch(
-        `https://investbook-production.up.railway.app/api/deals/${dealId}/chat/participants`,
+        `https://api.invest-book.com/api/deals/${dealId}/chat/participants`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -350,6 +351,8 @@ export default function DealDetailScreen({ route, navigation }) {
     </SafeAreaView>
   );
 }
+
+export default withSubscription(DealDetailScreen, ACCESS_TYPES.VIEW_LISTINGS);
 
 const styles = StyleSheet.create({
   safeArea: {

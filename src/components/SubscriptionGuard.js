@@ -9,7 +9,7 @@ import {
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../hooks/useAuth';
 
-const API_URL = 'https://investbook-production.up.railway.app/api';
+const API_URL = 'https://api.invest-book.com/api';
 
 export const ACCESS_TYPES = {
   VIEW_LISTINGS: 'view_listings',
@@ -61,7 +61,7 @@ export const withSubscription = (WrappedComponent, requiredAccess = ACCESS_TYPES
           if (data.isSubscribed) {
             const tier = data.tier || data.planId;
             console.log('   Tier detected:', tier);
-            if (tier === 'chat' || tier === 'CHAT') {
+            if (tier === 'chat' || tier === 'chat_yearly') {
               level = 'chat';
             } else {
               level = 'view_only';

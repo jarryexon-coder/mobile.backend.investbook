@@ -14,23 +14,34 @@ import {
 import Icon from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
-import { getPlaceholderImage } from '../utils/imageUtils';
+import {
+  getPlaceholderImage,
+  getSafeImageUrl,
+  initImageUtils,
+} from '../utils/imageUtils';
+import { withSubscription, ACCESS_TYPES } from '../components/SubscriptionGuard';
 
 // Memoized DealCard to prevent re-renders
 const DealCard = React.memo(({ deal, onPress }) => {
   const [imageError, setImageError] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [mappingReady, setMappingReady] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    initImageUtils()
+      .catch(() => {})
+      .finally(() => {
+        if (isMounted) setMappingReady(true);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
   
-  // Memoize the image URL - only computed once
-  const imageUrl = useMemo(() => {
-    if (deal.images && Array.isArray(deal.images) && deal.images.length > 0) {
-      return deal.images[0];
-    }
-    if (deal.imageUrl) return deal.imageUrl;
-    if (deal.image) return deal.image;
-    if (deal.photo) return deal.photo;
-    return null;
-  }, [deal.id]); // Only recompute if deal.id changes
+  // Prefer an image hosted by InvestBook. Direct source URLs remain a fallback
+  // for a listing that has not yet been mapped.
+  const imageUrl = useMemo(() => getSafeImageUrl(deal), [deal, mappingReady]);
   
   // Memoize the placeholder
   const placeholderUrl = useMemo(() => getPlaceholderImage(deal), [deal.id]);
@@ -43,7 +54,7 @@ const DealCard = React.memo(({ deal, onPress }) => {
     return imageUrl;
   }, [imageError, imageUrl, placeholderUrl]);
   
-  const hasRealImage = imageUrl && !imageError;
+  const hasRealImage = imageUrl && imageUrl !== placeholderUrl && !imageError;
   
   return (
     <TouchableOpacity 
@@ -101,10 +112,16 @@ const DealCard = React.memo(({ deal, onPress }) => {
   return prevProps.deal?.id === nextProps.deal?.id;
 });
 
-export default function DealsScreen({ navigation }) {
+function DealsScreen({ navigation }) {
   const [deals, setDeals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    // The mapping connects listing IDs to images hosted by our API. Loading it
+    // before cards render avoids depending on third-party image hotlinks.
+    initImageUtils().catch(() => {});
+  }, []);
 
   const loadDeals = useCallback(async (refresh = false) => {
     try {
@@ -213,6 +230,8 @@ export default function DealsScreen({ navigation }) {
     </SafeAreaView>
   );
 }
+
+export default withSubscription(DealsScreen, ACCESS_TYPES.VIEW_LISTINGS);
 
 const styles = StyleSheet.create({
   safeArea: {
