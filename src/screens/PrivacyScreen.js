@@ -1,14 +1,14 @@
 import React from 'react';
 import { Alert, Linking, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-const PRIVACY_URL = 'https://investbook-production.up.railway.app/privacy';
+const PRIVACY_URL = 'https://api.invest-book.com/privacy';
 
 export default function PrivacyScreen() {
   const openPolicy = async () => {
     try {
       await Linking.openURL(PRIVACY_URL);
     } catch {
-      Alert.alert('Unable to open privacy policy', 'Please visit investbook-production.up.railway.app/privacy.');
+      Alert.alert('Unable to open privacy policy', 'Please visit api.invest-book.com/privacy.');
     }
   };
 
@@ -24,7 +24,7 @@ export default function PrivacyScreen() {
         </TouchableOpacity>
         <View style={styles.contactBox}>
           <Text style={styles.contactTitle}>Privacy questions</Text>
-          <Text style={styles.copy}>Email support@investbook.com for help with privacy or data requests.</Text>
+          <Text style={styles.copy}>Email privacy@invest-book.com for help with privacy or data requests.</Text>
         </View>
       </ScrollView>
     </SafeAreaView>

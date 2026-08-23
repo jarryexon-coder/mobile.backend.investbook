@@ -124,7 +124,7 @@ export default function TermsScreen({ navigation, route }) {
             <Text style={styles.sectionText}>
               For questions or concerns regarding these terms, please contact us at:
             </Text>
-            <Text style={styles.contactText}>📧 support@investbook.com</Text>
+            <Text style={styles.contactText}>📧 support@invest-book.com</Text>
             <Text style={styles.contactText}>📞 1-800-829-4933</Text>
             <Text style={styles.contactText}>📍 6595 Roswell Road, Suite G, PMB 5845</Text>
             <Text style={styles.contactText}>   Sandy Springs, GA 30328</Text>

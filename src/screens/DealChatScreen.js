@@ -16,10 +16,9 @@ import {
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../hooks/useAuth';
 import { io } from 'socket.io-client';
-import { EXPO_PUBLIC_API_URL } from '@env';
 import { withSubscription, ACCESS_TYPES } from '../components/SubscriptionGuard';
+import { API_URL, API_ORIGIN } from '../config/api';
 
-const API_URL = EXPO_PUBLIC_API_URL || 'https://investbook-production.up.railway.app/api';
 
 // Chat Message Component
 const ChatMessage = ({ message, isOwn, isSystem, onReport, onBlock }) => {
@@ -90,7 +89,7 @@ function DealChatScreen({ route, navigation }) {
     console.log('🔌 Initializing socket connection...');
     console.log('   API_URL:', API_URL);
     
-    const newSocket = io(API_URL.replace('/api', ''), {
+    const newSocket = io(API_ORIGIN, {
       transports: ['websocket'],
       auth: {
         token: token,

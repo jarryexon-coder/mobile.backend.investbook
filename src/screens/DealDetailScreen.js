@@ -15,6 +15,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../hooks/useAuth';
 import { getSafeImageUrl, getPlaceholderImage, isImageBlocked, initImageUtils } from '../utils/imageUtils';
 import { withSubscription, ACCESS_TYPES } from '../components/SubscriptionGuard';
+import { API_URL } from '../config/api';
 
 const { width } = Dimensions.get('window');
 
@@ -144,7 +145,7 @@ function DealDetailScreen({ route, navigation }) {
     try {
       const dealId = deal.id || deal.propertyId || deal.listing_id;
       const response = await fetch(
-        `https://api.invest-book.com/api/deals/${dealId}/chat/participants`,
+        `${API_URL}/deals/${dealId}/chat/participants`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -158,6 +159,37 @@ function DealDetailScreen({ route, navigation }) {
       }
     } catch (error) {
       // Silent fail
+    }
+  };
+
+  const openDealChat = async () => {
+    const listingId = Number(deal?.id || deal?.propertyId || deal?.listing_id);
+    if (!Number.isSafeInteger(listingId) || listingId <= 0) {
+      Alert.alert('Chat unavailable', 'This listing is not available for chat yet. Please choose another listing.');
+      return;
+    }
+
+    try {
+      const priceText = String(deal?.price || deal?.priceDisplay || '0');
+      const numericPrice = Number(priceText.replace(/[^0-9.]/g, '')) || 1;
+      const response = await fetch(`${API_URL}/deals/ensure/${listingId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          title: safeTitle,
+          description: getString(deal?.description || deal?.summary, 'Listing discussion'),
+          propertyType: getString(deal?.propertyType, 'Commercial'),
+          location: getString(deal?.location || deal?.address || deal?.city, ''),
+          price: numericPrice,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.deal_id) {
+        throw new Error(data.error || 'Unable to prepare this deal for chat.');
+      }
+      navigation.navigate('DealChat', { dealId: data.deal_id, dealTitle: safeTitle, deal });
+    } catch (error) {
+      Alert.alert('Chat unavailable', error.message || 'Please try again in a moment.');
     }
   };
 
@@ -324,13 +356,7 @@ function DealDetailScreen({ route, navigation }) {
           {dealId && token ? (
             <TouchableOpacity
               style={styles.chatButton}
-              onPress={() => {
-                navigation.navigate('DealChat', { 
-                  dealId: String(dealId),
-                  dealTitle: safeTitle,
-                  deal: deal
-                });
-              }}
+              onPress={openDealChat}
             >
               <Icon name="people-outline" size={20} color="white" />
               <Text style={styles.chatButtonText}>

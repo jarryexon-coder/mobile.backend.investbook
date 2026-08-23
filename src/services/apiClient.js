@@ -1,7 +1,7 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_URL } from '../config/api';
 
-const API_URL = 'https://investbook-production.up.railway.app/api';
 
 // Create axios instance
 const apiClient = axios.create({

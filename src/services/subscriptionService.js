@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+import { API_URL } from '../config/api';
 
-const API_URL = 'https://investbook-production.up.railway.app/api';
 
 export const SUBSCRIPTION_PLANS = {
   MONTHLY: {

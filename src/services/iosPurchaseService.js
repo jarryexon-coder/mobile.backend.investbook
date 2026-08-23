@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 import { finishTransaction, initConnection, requestSubscription } from 'react-native-iap';
+import { API_URL } from '../config/api';
 
-const API_URL = 'https://api.invest-book.com/api';
 
 // Create these exact auto-renewable subscriptions in App Store Connect before release.
 export const IOS_SUBSCRIPTION_PRODUCTS = {

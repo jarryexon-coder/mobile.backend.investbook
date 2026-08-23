@@ -17,11 +17,12 @@ import PortfolioScreen from './src/screens/PortfolioScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import DealDetailScreen from './src/screens/DealDetailScreen';
 import TermsScreen from './src/screens/TermsScreen';
-import ChatScreen from './src/screens/ChatScreen';
+import ChatHubScreen from './src/screens/ChatHubScreen';
 import Under200kScreen from './src/screens/Under200kScreen';
 import SubscriptionScreen from './src/screens/SubscriptionScreen';
 import DealChatScreen from './src/screens/DealChatScreen';
 import PrivacyScreen from './src/screens/PrivacyScreen';
+import EditProfileScreen from './src/screens/EditProfileScreen';
 
 // Import the listings data directly
 import listingsData from './src/data/listings.json';
@@ -140,7 +141,7 @@ function MainTabs() {
       <Tab.Screen name="Deals" component={DealsScreen} options={{ title: 'Deals' }} />
       <Tab.Screen name="Portfolio" component={PortfolioScreen} options={{ title: 'Portfolio' }} />
       <Tab.Screen name="Under200k" component={Under200kScreen} options={{ title: '💰 $200k' }} />
-      <Tab.Screen name="Chat" component={ChatScreen} options={{ title: 'Chat' }} />
+      <Tab.Screen name="Chat" component={ChatHubScreen} options={{ title: 'Chat' }} />
       <Tab.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profile' }} />
     </Tab.Navigator>
   );
@@ -189,16 +190,6 @@ function AppNavigator() {
             }}
           />
           <Stack.Screen 
-            name="Chat" 
-            component={ChatScreen}
-            options={{ 
-              headerShown: true,
-              headerStyle: { backgroundColor: '#2563eb' },
-              headerTintColor: '#fff',
-              title: 'Chat'
-            }}
-          />
-          <Stack.Screen 
             name="Subscription" 
             component={SubscriptionScreen}
             options={{ 
@@ -212,6 +203,11 @@ function AppNavigator() {
             name="Privacy"
             component={PrivacyScreen}
             options={{ headerShown: true, title: 'Privacy & Data' }}
+          />
+          <Stack.Screen
+            name="EditProfile"
+            component={EditProfileScreen}
+            options={{ headerShown: true, title: 'Edit Profile' }}
           />
         </>
       )}

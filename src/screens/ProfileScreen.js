@@ -1,24 +1,29 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, SafeAreaView, StatusBar } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../hooks/useAuth';
-import { subscriptionService } from '../services/subscriptionService';
+import { API_URL } from '../config/api';
+import { useFocusEffect } from '@react-navigation/native';
 
 export default function ProfileScreen({ navigation }) {
   const { user, token, logout } = useAuth();
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [subscription, setSubscription] = useState(null);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     checkSubscription();
-  }, []);
+  }, [token]));
 
   const checkSubscription = async () => {
     try {
-      const subscribed = await subscriptionService.isSubscribed();
-      const sub = await subscriptionService.getSubscription();
-      setIsSubscribed(subscribed);
-      setSubscription(sub);
+      if (!token) return;
+      const response = await fetch(`${API_URL}/subscription-status`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error('Subscription status unavailable');
+      const data = await response.json();
+      setIsSubscribed(Boolean(data.isSubscribed));
+      setSubscription(data);
     } catch (error) {
       console.error('Error checking subscription:', error);
     }
@@ -51,7 +56,7 @@ export default function ProfileScreen({ navigation }) {
           text: 'Delete Account', style: 'destructive',
           onPress: async () => {
             try {
-              const response = await fetch('https://investbook-production.up.railway.app/api/account', {
+              const response = await fetch(`${API_URL}/account`, {
                 method: 'DELETE',
                 headers: { Authorization: `Bearer ${token}` },
               });
@@ -59,7 +64,7 @@ export default function ProfileScreen({ navigation }) {
               await logout();
               Alert.alert('Account deleted', 'Your account and associated personal data have been deleted.');
             } catch {
-              Alert.alert('Unable to delete account', 'Please try again or contact support@investbook.com.');
+              Alert.alert('Unable to delete account', 'Please try again or contact support@invest-book.com.');
             }
           },
         },
@@ -69,7 +74,11 @@ export default function ProfileScreen({ navigation }) {
 
   const getSubscriptionLabel = () => {
     if (isSubscribed) {
-      return subscription?.planId === 'monthly' ? 'Monthly Premium' : 'Yearly Premium';
+      const planId = subscription?.tier || subscription?.planId;
+      if (planId === 'chat' || planId === 'chat_yearly') {
+        return planId === 'chat_yearly' ? 'Chat & Network — Yearly' : 'Chat & Network — Monthly';
+      }
+      return planId === 'view_only_yearly' ? 'View Only — Yearly' : 'View Only — Monthly';
     }
     return 'Free';
   };
@@ -97,7 +106,7 @@ export default function ProfileScreen({ navigation }) {
         </View>
 
         <View style={styles.menu}>
-          <TouchableOpacity style={styles.menuItem}>
+          <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('EditProfile')}>
             <Icon name="person-outline" size={24} color="#1a1a1a" />
             <Text style={styles.menuText}>Edit Profile</Text>
             <Icon name="chevron-forward" size={20} color="#999" style={styles.menuArrow} />

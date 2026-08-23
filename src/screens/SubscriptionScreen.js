@@ -14,8 +14,10 @@ import {
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../hooks/useAuth';
 import { purchaseIosSubscription } from '../services/iosPurchaseService';
+import { API_URL } from '../config/api';
 
-const API_URL = 'https://api.invest-book.com/api';
+const PRIVACY_URL = 'https://api.invest-book.com/privacy';
+const APPLE_EULA_URL = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
 
 const SUBSCRIPTION_TIERS = {
   view_only: {
@@ -65,6 +67,7 @@ export default function SubscriptionScreen({ navigation }) {
   const [subscription, setSubscription] = useState(null);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [selectedTier, setSelectedTier] = useState('chat');
+  const [billingPeriod, setBillingPeriod] = useState('monthly');
   const [error, setError] = useState(null);
   const [testMode, setTestMode] = useState(false);
 
@@ -148,7 +151,12 @@ export default function SubscriptionScreen({ navigation }) {
     );
   };
 
-  const accessLevel = isSubscribed ? (subscription?.tier || subscription?.planId || 'view_only') : 'none';
+  const rawAccessLevel = subscription?.tier || subscription?.planId || 'view_only';
+  const accessLevel = rawAccessLevel === 'chat_yearly' ? 'chat' : rawAccessLevel === 'view_only_yearly' ? 'view_only' : rawAccessLevel;
+  const selectedPlanId = billingPeriod === 'yearly' ? `${selectedTier}_yearly` : selectedTier;
+  const selectedPlan = SUBSCRIPTION_TIERS[selectedTier];
+  const selectedPrice = billingPeriod === 'yearly' ? selectedPlan.yearlyPrice : selectedPlan.price;
+  const selectedPeriod = billingPeriod === 'yearly' ? selectedPlan.yearlyPeriod : selectedPlan.period;
 
   if (loading) {
     return (
@@ -209,6 +217,21 @@ export default function SubscriptionScreen({ navigation }) {
 
         {!isSubscribed && (
           <View style={styles.plansContainer}>
+            <View style={styles.billingToggle} accessibilityRole="tablist">
+              {['monthly', 'yearly'].map((period) => (
+                <TouchableOpacity
+                  key={period}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: billingPeriod === period }}
+                  style={[styles.billingOption, billingPeriod === period && styles.billingOptionSelected]}
+                  onPress={() => setBillingPeriod(period)}
+                >
+                  <Text style={[styles.billingOptionText, billingPeriod === period && styles.billingOptionTextSelected]}>
+                    {period === 'monthly' ? 'Monthly' : 'Yearly'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
             {Object.entries(SUBSCRIPTION_TIERS).map(([key, tier]) => (
               <TouchableOpacity
                 key={key}
@@ -237,8 +260,8 @@ export default function SubscriptionScreen({ navigation }) {
                 </View>
 
                 <Text style={styles.planPrice}>
-                  {tier.price}
-                  <Text style={styles.planPeriod}>{tier.period}</Text>
+                  {billingPeriod === 'yearly' ? tier.yearlyPrice : tier.price}
+                  <Text style={styles.planPeriod}>{billingPeriod === 'yearly' ? tier.yearlyPeriod : tier.period}</Text>
                 </Text>
 
                 <View style={styles.planFeatures}>
@@ -260,20 +283,20 @@ export default function SubscriptionScreen({ navigation }) {
 
             <TouchableOpacity
               style={[styles.subscribeButton, subscribing && styles.subscribeButtonDisabled]}
-              onPress={() => handleSubscribe(selectedTier)}
+              onPress={() => handleSubscribe(selectedPlanId)}
               disabled={subscribing}
             >
               {subscribing ? (
                 <ActivityIndicator color="white" />
               ) : (
                 <Text style={styles.subscribeButtonText}>
-                  Subscribe to {SUBSCRIPTION_TIERS[selectedTier].name}
+                  Subscribe to {selectedPlan.name} for {selectedPrice}{selectedPeriod}
                 </Text>
               )}
             </TouchableOpacity>
 
             <Text style={styles.secureText}>
-              🔒 Secured by Stripe. Cancel anytime.
+              Payment is processed securely by Apple. Cancel anytime in Apple Account settings.
             </Text>
           </View>
         )}
@@ -300,9 +323,14 @@ export default function SubscriptionScreen({ navigation }) {
           </View>
         )}
 
-        <Text style={styles.termsText}>
-          By subscribing, you agree to our Terms of Service. Subscriptions auto-renew unless canceled.
-        </Text>
+        <View style={styles.legalContainer}>
+          <Text style={styles.termsText}>Subscriptions automatically renew unless canceled at least 24 hours before the end of the current period. Your Apple Account is charged at confirmation of purchase.</Text>
+          <View style={styles.legalLinks}>
+            <TouchableOpacity onPress={() => Linking.openURL(PRIVACY_URL)}><Text style={styles.legalLink}>Privacy Policy</Text></TouchableOpacity>
+            <Text style={styles.legalDivider}> · </Text>
+            <TouchableOpacity onPress={() => Linking.openURL(APPLE_EULA_URL)}><Text style={styles.legalLink}>Terms of Use (EULA)</Text></TouchableOpacity>
+          </View>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -416,6 +444,11 @@ const styles = StyleSheet.create({
   plansContainer: {
     padding: 16,
   },
+  billingToggle: { flexDirection: 'row', backgroundColor: '#e5e7eb', borderRadius: 10, padding: 3, marginBottom: 16 },
+  billingOption: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 8 },
+  billingOptionSelected: { backgroundColor: '#fff' },
+  billingOptionText: { color: '#4b5563', fontWeight: '600' },
+  billingOptionTextSelected: { color: '#2563eb' },
   planCard: {
     backgroundColor: '#fff',
     borderRadius: 16,
@@ -579,4 +612,8 @@ const styles = StyleSheet.create({
     marginBottom: 40,
     lineHeight: 18,
   },
+  legalContainer: { paddingHorizontal: 20, marginBottom: 36 },
+  legalLinks: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 4 },
+  legalLink: { color: '#2563eb', fontSize: 12, textDecorationLine: 'underline' },
+  legalDivider: { color: '#6b7280', fontSize: 12 },
 });

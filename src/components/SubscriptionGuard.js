@@ -8,8 +8,8 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../hooks/useAuth';
+import { API_URL } from '../config/api';
 
-const API_URL = 'https://api.invest-book.com/api';
 
 export const ACCESS_TYPES = {
   VIEW_LISTINGS: 'view_listings',

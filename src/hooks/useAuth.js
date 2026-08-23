@@ -1,8 +1,8 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+import { API_URL } from '../config/api';
 
-const API_URL = 'https://investbook-production.up.railway.app/api';
 const AuthContext = createContext({});
 
 export const AuthProvider = ({ children }) => {
@@ -150,6 +150,27 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const updateUser = async (updates) => {
+    if (!token) {
+      return { success: false, message: 'Please sign in again.' };
+    }
+
+    try {
+      const response = await axios.patch(`${API_URL}/profile`, updates, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const updatedUser = response.data.user;
+      await AsyncStorage.setItem('userData', JSON.stringify(updatedUser));
+      setUser(updatedUser);
+      return { success: true, user: updatedUser };
+    } catch (error) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Unable to update your profile. Please try again.',
+      };
+    }
+  };
+
   // Check if user is authenticated
   const isAuthenticated = !!user && !!token;
 
@@ -174,6 +195,7 @@ export const AuthProvider = ({ children }) => {
     login,
     register,
     logout,
+    updateUser,
     isAuthenticated,
     verifyToken,
   };

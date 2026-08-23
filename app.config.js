@@ -16,7 +16,7 @@ plugins: [
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.jerryjiya.investbook",
-      buildNumber: "16"
+      buildNumber: "17"
     },
     android: {
       adaptiveIcon: {
@@ -30,6 +30,7 @@ plugins: [
       favicon: "./assets/favicon.png"
     },
     extra: {
+      apiUrl: 'https://api.invest-book.com/api',
       iosSubscriptions: {
         view_only: 'com.jerryjiya.investbook.viewonly.monthly',
         view_only_yearly: 'com.jerryjiya.investbook.viewonly.yearly',

@@ -1,5 +1,6 @@
 import io from 'socket.io-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_ORIGIN } from '../config/api';
 
 class WebSocketService {
   constructor() {
@@ -37,7 +38,6 @@ class WebSocketService {
       await this.init();
       
       const token = await AsyncStorage.getItem('token');
-      const API_URL = 'https://investbook-production.up.railway.app';
       
       // ✅ Only connect if we have a token
       if (!token) {
@@ -47,7 +47,7 @@ class WebSocketService {
       
       console.log('🔗 Connecting to WebSocket...');
       
-      this.socket = io(API_URL, {
+      this.socket = io(API_ORIGIN, {
         auth: { token },
         transports: ['websocket'],
         reconnection: true,
