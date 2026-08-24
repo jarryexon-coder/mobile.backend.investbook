@@ -14,7 +14,9 @@ const apiClient = axios.create({
 // Request interceptor to add token
 apiClient.interceptors.request.use(
   async (config) => {
-    const token = await AsyncStorage.getItem('token');
+    // AuthProvider stores the current session under userToken.  Fall back to
+    // the old key only for devices that may still have a legacy session.
+    const token = await AsyncStorage.getItem('userToken') || await AsyncStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -31,6 +33,8 @@ apiClient.interceptors.response.use(
   async (error) => {
     if (error.response?.status === 401) {
       // Token expired or invalid
+      await AsyncStorage.removeItem('userToken');
+      await AsyncStorage.removeItem('userData');
       await AsyncStorage.removeItem('token');
       await AsyncStorage.removeItem('user');
       // Navigate to login (will be handled by auth context)
