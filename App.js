@@ -23,6 +23,7 @@ import SubscriptionScreen from './src/screens/SubscriptionScreen';
 import DealChatScreen from './src/screens/DealChatScreen';
 import PrivacyScreen from './src/screens/PrivacyScreen';
 import EditProfileScreen from './src/screens/EditProfileScreen';
+import PropertyResearchScreen from './src/screens/PropertyResearchScreen';
 
 // Import the listings data directly
 import listingsData from './src/data/listings.json';
@@ -127,6 +128,7 @@ function MainTabs() {
           else if (route.name === 'Chat') iconName = focused ? 'chatbubble' : 'chatbubble-outline';
           else if (route.name === 'Profile') iconName = focused ? 'person' : 'person-outline';
           else if (route.name === 'Under200k') iconName = focused ? 'cash' : 'cash-outline';
+          else if (route.name === 'Research') iconName = focused ? 'analytics' : 'analytics-outline';
           return <Icon name={iconName} size={size} color={color} />;
         },
         tabBarActiveTintColor: '#2563eb',
@@ -141,6 +143,7 @@ function MainTabs() {
       <Tab.Screen name="Deals" component={DealsScreen} options={{ title: 'Deals' }} />
       <Tab.Screen name="Portfolio" component={PortfolioScreen} options={{ title: 'Portfolio' }} />
       <Tab.Screen name="Under200k" component={Under200kScreen} options={{ title: '💰 $200k' }} />
+      <Tab.Screen name="Research" component={PropertyResearchScreen} options={{ title: 'Research' }} />
       <Tab.Screen name="Chat" component={ChatHubScreen} options={{ title: 'Chat' }} />
       <Tab.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profile' }} />
     </Tab.Navigator>
