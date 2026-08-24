@@ -90,7 +90,9 @@ function DealChatScreen({ route, navigation }) {
     console.log('   API_URL:', API_URL);
     
     const newSocket = io(API_ORIGIN, {
-      transports: ['websocket'],
+      // Start with Socket.IO polling so Railway/proxy connections work, then
+      // upgrade to WebSocket when the network supports it.
+      transports: ['polling', 'websocket'],
       auth: {
         token: token,
       },
@@ -151,7 +153,11 @@ function DealChatScreen({ route, navigation }) {
       console.log('📩 New message received:', data);
       if (data.deal_id === dealId) {
         console.log('✅ Message for current deal, adding to list');
-        setMessages((prev) => [...prev, data.message]);
+        setMessages((prev) => (
+          prev.some((message) => String(message.id) === String(data.message.id))
+            ? prev
+            : [...prev, data.message]
+        ));
         if (data.message.participant_count) {
           setParticipantCount(data.message.participant_count);
         }
@@ -461,7 +467,7 @@ function DealChatScreen({ route, navigation }) {
           </Text>
           <Text style={styles.headerSubtitle}>
             {participantCount} {participantCount === 1 ? 'participant' : 'participants'}
-            {isConnected ? ' • 🟢 Online' : ' • 🔴 Offline'}
+            {isConnected ? ' • 🟢 Live updates on' : ' • 🟡 Live updates reconnecting'}
           </Text>
         </View>
         <TouchableOpacity 
@@ -509,13 +515,13 @@ function DealChatScreen({ route, navigation }) {
             onChangeText={handleTyping}
             multiline
             maxLength={1000}
-            editable={!sending && isConnected}
+            editable={!sending}
             placeholderTextColor="#999"
           />
           <TouchableOpacity
-            style={[styles.sendButton, (!inputText.trim() || sending || !isConnected) && styles.sendButtonDisabled]}
+            style={[styles.sendButton, (!inputText.trim() || sending) && styles.sendButtonDisabled]}
             onPress={handleSend}
-            disabled={!inputText.trim() || sending || !isConnected}
+            disabled={!inputText.trim() || sending}
           >
             {sending ? (
               <ActivityIndicator size="small" color="white" />
@@ -526,7 +532,7 @@ function DealChatScreen({ route, navigation }) {
         </View>
         {!isConnected && (
           <View style={styles.offlineBanner}>
-            <Text style={styles.offlineBannerText}>⚠️ Reconnecting...</Text>
+            <Text style={styles.offlineBannerText}>🟡 Live updates are reconnecting. You can still send messages.</Text>
           </View>
         )}
       </KeyboardAvoidingView>
